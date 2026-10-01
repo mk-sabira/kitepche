@@ -17,10 +17,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# it gets the covers
-# app.mount("/books", StaticFiles(directory="../frontend/public/books"), name="books")
-
 #routes
 
 app.include_router(health.router)
