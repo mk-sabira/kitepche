@@ -21,7 +21,7 @@ def count_syllables_in_word(word: str) -> int:
 
 def split_into_words(text: str)-> list[str]:
 
-    word = re.findall(r"[а-яА-ЯөүӨҮёЁa-zA-Z]+", text)
+    word = re.findall(r"[а-яА-ЯөүӨҮңҢёЁa-zA-Z]+", text)
     return word
 
 
