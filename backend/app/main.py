@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import health, analyze, books
+from app.api.routes import health, analyze, books, assistant
 from app.core.database import Base, engine
 from app.models.book import Book  # noqa: F401
 
@@ -25,6 +25,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(analyze.router)
 app.include_router(books.router)
+app.include_router(assistant.router)
 
 @app.get("/")
 def read_root():

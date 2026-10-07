@@ -8,10 +8,16 @@ from app.services.analyzer import analyze_text, analyze_kyrgyz_readability
 client = genai.Client(api_key=settings.gemini_api_key)
 MODEL = "gemini-3.5-flash-lite"
 
+LANGUAGES = {"ky": "Kyrgyz", "ru": "Russian", "en": "English"}
+
 SYSTEM = (
     "You help parents and teachers judge Kyrgyz texts for children. "
-    "When asked about a text, measure it with the tool and base your answer on the numbers, "
-    "quoting the key ones (word count, average words per sentence, ARI score, readability score). "
+    "If the question is about the text, measure it with the tool and base your answer on the "
+    "numbers, quoting the key ones (word count, average words per sentence, ARI score, "
+    "readability score). "
+    "If the question is not about the text, do not use the tool; briefly say you can only "
+    "help with judging Kyrgyz texts for children. "
+    "Write refusals in the requested language too. "
     "The scores come from formulas not yet validated for Kyrgyz, so give your conclusion "
     "as an estimate and say so in your own words. "
     "If the two scores disagree, say so. "
@@ -42,12 +48,15 @@ def run_tool(name: str, arguments: dict) -> dict:
     return {"error": f"Unknown tool: {name}"}
 
 
-def ask_assistant(text: str, question: str, max_turns: int = 5) -> dict:
+def ask_assistant(text: str, question: str, language: str = "en", max_turns: int = 5) -> dict:
     tools_used = []
 
     interaction = client.interactions.create(
         model=MODEL,
-        input=f"{question}\n\nText: {text}",
+        input=(
+            f"{question}\n\nText: {text}\n\n"
+            f"Write your whole answer in {LANGUAGES[language]}."
+        ),
         tools=[ANALYZE_TOOL],
         system_instruction=SYSTEM,
     )
