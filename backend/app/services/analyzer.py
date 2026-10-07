@@ -85,3 +85,29 @@ def analyze_kyrgyz_readability(text: str)-> dict:
         "avg_words_per_sentence": round(avg_words_per_sentence, 2),
         "readability_score": round(readability_score, 2)
     }
+
+
+def find_difficult_words(text: str, limit: int = 5) -> dict:
+    words = split_into_words(text)
+
+    if not words:
+        return {"error": "Text has no valid words"}
+
+    syllables_by_word = {}
+    for word in words:
+        key = word.lower()
+        if key not in syllables_by_word:
+            syllables_by_word[key] = count_syllables_in_word(key)
+
+    ranked = sorted(
+        syllables_by_word.items(),
+        key=lambda item: (item[1], len(item[0])),
+        reverse=True,
+    )
+
+    return {
+        "difficult_words": [
+            {"word": word, "syllables": syllables, "characters": len(word)}
+            for word, syllables in ranked[:limit]
+        ]
+    }
