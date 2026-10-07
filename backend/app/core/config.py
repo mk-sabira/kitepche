@@ -1,8 +1,11 @@
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-class Settings(BaseSettings):
-    database_url: str = "postgresql://kitepche:devpassword@localhost:5433/kitepche_db"
+BASE_DIR = Path(__file__).resolve().parents[2]
 
-    model_config = SettingsConfigDict(env_file=".env")
+class Settings(BaseSettings):
+    database_url: str
+
+    model_config = SettingsConfigDict(env_file=BASE_DIR / ".env")
 
 settings = Settings()
