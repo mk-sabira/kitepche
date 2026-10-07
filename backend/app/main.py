@@ -1,10 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import health, analyze, books
+from app.core.database import Base, engine
+from app.models.book import Book  # noqa: F401
 
 # //getting books cover from FE
 
 app = FastAPI()
+Base.metadata.create_all(bind=engine)
 
 app.add_middleware(
     CORSMiddleware,
