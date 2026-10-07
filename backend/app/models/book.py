@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.core.database import Base
 
@@ -13,10 +13,8 @@ class Book(Base):
 
 
 class BookResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     title: str
     age_group: str
     cover_url: str | None = None
-
-    class Config:
-        from_attributes = True
