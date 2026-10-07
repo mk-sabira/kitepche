@@ -13,13 +13,18 @@ BOOKS = [
 def seed_books():
     session = SessionLocal()
     try:
+        added_count = 0
         for book_data in BOOKS:
-            book = Book(**book_data)
-            session.add(book)
+            existing = session.query(Book).filter_by(title=book_data["title"]).first()
+            if existing:
+                continue
+            session.add(Book(**book_data))
+            added_count += 1
         session.commit()
-        print(f"Seeded {len(BOOKS)} books")
+        print(f"Seeded {added_count} new book(s), skipped {len(BOOKS) - added_count} already present")
     finally:
         session.close()
+
 
 if __name__ == "__main__":
     seed_books()
