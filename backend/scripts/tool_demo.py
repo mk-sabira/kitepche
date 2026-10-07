@@ -36,13 +36,23 @@ def run_tool(name: str, arguments: dict) -> dict:
     return {"error": f"Unknown tool: {name}"}
 
 
+SYSTEM = (
+    "You help parents and teachers judge Kyrgyz texts for children. "
+    "Always base your answer on the numbers returned by the tool and quote "
+    "the key ones (word count, average words per sentence, ARI score, readability score). "
+    "These scores come from formulas that are not yet validated for Kyrgyz, "
+    "so present your conclusion as an estimate, not a fact. "
+    "If the two scores disagree, say so."
+)
+
+
 interaction = client.interactions.create(
     model=MODEL,
     input=question,
     tools=[analyze_readability_tool],
+    system_instruction=SYSTEM,
 )
 
-print(interaction)
 
 fc_step = next(s for s in interaction.steps if s.type == "function_call")
 
@@ -61,6 +71,7 @@ final = client.interactions.create(
     ],
     tools=[analyze_readability_tool],
     previous_interaction_id=interaction.id,
+    system_instruction=SYSTEM,
 )
 
 print("Answer:", final.output_text)
