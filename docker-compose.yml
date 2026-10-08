@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16
+    container_name: kitepche-postgres
+    environment:
+      POSTGRES_USER: kitepche
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: kitepche_db
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - kitepche_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kitepche -d kitepche_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  kitepche_pgdata:
