@@ -21,6 +21,9 @@ function Header() {
         <NavLink to="/analyze" className={navClass}>
           Analyze
         </NavLink>
+        <NavLink to="/assistant" className={navClass}>
+          Ask AI
+        </NavLink>
         <button className="bg-highlight hover:bg-highlight-dark text-white font-medium px-4 py-2 rounded-full">
           Login
         </button>
