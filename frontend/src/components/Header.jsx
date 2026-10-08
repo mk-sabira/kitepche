@@ -21,7 +21,7 @@ function Header() {
         <NavLink to="/analyze" className={navClass}>
           Analyze
         </NavLink>
-        <button className="bg-accent hover:bg-accent-dark text-white font-medium px-4 py-2 rounded-full">
+        <button className="bg-highlight hover:bg-highlight-dark text-white font-medium px-4 py-2 rounded-full">
           Login
         </button>
       </nav>

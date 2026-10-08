@@ -50,7 +50,7 @@ function AnalyzePage() {
   return (
     <section className="bg-paper-soft py-12">
       <div className="max-w-4xl mx-auto px-8">
-        <p className="text-accent font-body font-semibold text-sm uppercase tracking-wide mb-3">
+        <p className="text-text-highlight font-body font-semibold text-sm uppercase tracking-wide mb-3">
           Текстти анализдөө
         </p>
         <h1 className="font-display text-4xl font-bold text-ink mb-3">
@@ -108,7 +108,7 @@ function AnalyzePage() {
               </div>
               <div className="bg-paper rounded-2xl p-6 border border-paper shadow-sm">
                 <p className="font-body text-sm text-ink/60 mb-1">ARI score</p>
-                <p className="font-display text-4xl font-bold text-accent">
+                <p className="font-display text-4xl font-bold text-text-highlight">
                   {formatValue(result.ari_score)}
                 </p>
                 <p className="font-body text-sm text-ink/60 mt-2">

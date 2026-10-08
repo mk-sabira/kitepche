@@ -6,7 +6,7 @@ function Banner() {
       <div className="max-w-6xl mx-auto px-8 py-16">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
           <div className="order-2 lg:order-1">
-            <p className="text-accent font-body font-semibold text-sm uppercase tracking-wide mb-3">
+            <p className="text-highlight font-body font-semibold text-sm uppercase tracking-wide mb-3">
               Кыргыз тилинде окуу
             </p>
             <h1 className="font-display text-4xl lg:text-5xl font-bold text-ink leading-tight mb-6">
