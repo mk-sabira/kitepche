@@ -2,7 +2,7 @@
 
 **Kitepche** is a reading platform for Kyrgyz-language children's books, built around an original NLP component: a readability analyzer that scores how difficult a Kyrgyz text is to read, so books can eventually be matched to a child's reading level automatically.
 
-Kyrgyz is a low-resource language with very little existing NLP tooling. This project's core technical contribution is building that tooling — text analysis and readability scoring — from scratch, then wrapping it in a real product. On top of the analyzer sits an **AI reading assistant**: an LLM that answers questions about a text by calling the analyzer as a tool, instead of guessing.
+Kyrgyz is a low-resource language with very little existing NLP tooling. This project's core technical contribution is building that tooling — text analysis and readability scoring — from scratch, then wrapping it in a real product. On top of the analyzer sits an **AI reading assistant**: an LLM that answers questions about a text by calling the analyzer as a tool, so its answer rests on measured numbers, not on the model's impression alone.
 
 **Status:** MVP (minimum viable product) in active development. Working end-to-end: the readability engine and Analyze page, a database-backed book library, and the AI reading assistant (`/assistant`). Book content / reading flow, authentication, and an admin panel are the next phase (see Roadmap). This is a local development project — it is not deployed.
 
@@ -79,7 +79,7 @@ Instead of letting the model judge the text on its own, the backend gives it two
 | `analyze_readability` | Runs the existing analyzer: word, sentence, and syllable counts, ARI score, and the Ateşman-style readability score |
 | `find_difficult_words` | Ranks the text's unique words by syllable count, then length, and returns the top 5 |
 
-The model can call one tool, both, or neither (for an off-topic question it is instructed to decline briefly). The backend runs a tool-calling loop with a cap on the number of rounds, then returns the final answer together with the list of tools that were called — the frontend shows those as badges, so it's visible whether an answer is grounded in the analyzer's numbers.
+The model can call one tool, both, or neither (for an off-topic question it is instructed to decline briefly). The backend runs a tool-calling loop with a cap on the number of rounds, then returns the final answer together with the list of tools that were called — the frontend shows those as badges, so it's visible which analyzer tools the model consulted.
 
 ```
 Browser  ──POST /assistant {text, question, language}──►  FastAPI
@@ -157,9 +157,7 @@ This starts PostgreSQL 16 in a container (`kitepche-postgres`) on `localhost:543
 cd backend
 cp .env.example .env
 ```
-Then edit `backend/.env`:
-- `DATABASE_URL` — point it at `localhost:5433`, using the user, password, and database name from `docker-compose.yml`
-- `GEMINI_API_KEY` — your Gemini API key
+Then edit `backend/.env` and replace `your_key_here` with your Gemini API key. The `DATABASE_URL` already matches the Docker Compose database.
 
 `.env` is gitignored. The backend will not start without both values.
 
