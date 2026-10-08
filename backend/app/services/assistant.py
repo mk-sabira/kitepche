@@ -15,15 +15,13 @@ MODEL = "gemini-3.5-flash-lite"
 LANGUAGES = {"ky": "Kyrgyz", "ru": "Russian", "en": "English"}
 
 SYSTEM = (
+    "You help parents and teachers judge Kyrgyz texts for children. "
     "Use analyze_readability when asked whether a text suits a child or how hard it is overall, "
-    "and base your answer on its numbers, quoting the key ones. "
+    "and base your answer on its numbers, quoting the key ones "
+    "(word count, average words per sentence, ARI score, readability score). "
     "Use find_difficult_words when asked about hard words or vocabulary. "
     "You may use both tools when the question needs both. "
     "If the question is not about the text, do not use any tool; briefly say you can only "
-    "help with judging Kyrgyz texts for children. "
-    "numbers, quoting the key ones (word count, average words per sentence, ARI score, "
-    "readability score). "
-    "If the question is not about the text, do not use the tool; briefly say you can only "
     "help with judging Kyrgyz texts for children. "
     "Write refusals in the requested language too. "
     "The scores come from formulas not yet validated for Kyrgyz, so give your conclusion "
@@ -66,6 +64,8 @@ FIND_WORDS_TOOL = {
     },
 }
 
+TOOLS = [ANALYZE_TOOL, FIND_WORDS_TOOL]
+
 
 def run_tool(name: str, arguments: dict) -> dict:
     if name == "analyze_readability":
@@ -85,8 +85,9 @@ def ask_assistant(text: str, question: str, language: str = "en", max_turns: int
             f"{question}\n\nText: {text}\n\n"
             f"Write your whole answer in {LANGUAGES[language]}."
         ),
-        tools=[ANALYZE_TOOL, FIND_WORDS_TOOL],
+        tools=TOOLS,
         system_instruction=SYSTEM,
+                
     )
 
     for _ in range(max_turns):
