@@ -1,5 +1,7 @@
 # Kitepche
 
+[![CI](https://github.com/mk-sabira/kitepche/actions/workflows/ci.yml/badge.svg)](https://github.com/mk-sabira/kitepche/actions/workflows/ci.yml)
+
 **Kitepche** is a reading platform for Kyrgyz-language children's books, built around an original NLP component: a readability analyzer that scores how difficult a Kyrgyz text is to read, so books can eventually be matched to a child's reading level automatically.
 
 Kyrgyz is a low-resource language with very little existing NLP tooling. This project's core technical contribution is building that tooling — text analysis and readability scoring — from scratch, then wrapping it in a real product. On top of the analyzer sits an **AI reading assistant**: an LLM that answers questions about a text by calling the analyzer as a tool, so its answer rests on measured numbers, not on the model's impression alone.
@@ -109,7 +111,7 @@ This is a functioning proof of concept, not yet a production product. Deliberate
 - Book content — the database stores book metadata only (title, age group, cover); there is no book text or reading view yet
 - Database migrations — tables are created on startup with `create_all`, which creates missing tables but does not alter existing ones; there is no migration tool (e.g. Alembic) yet
 - User accounts and authentication
-- CI/CD and deployment infrastructure (tests exist for the analyzer, but nothing runs them automatically yet)
+- Deployment — there is no hosting and no automatic deployment (CD) yet. CI does exist (see [Continuous integration](#continuous-integration)), but tests cover only the analyzer and `find_difficult_words`; there are no API or frontend tests yet
 - ML-based scoring (current scoring is formula-based; see Roadmap)
 
 ---
@@ -123,7 +125,8 @@ Being explicit about what this does *not* do yet:
 - The assistant's answer is shown as plain text, so Markdown formatting from the model appears as raw `**` markers.
 - If the backend can't be reached, the frontend shows the browser's generic "Failed to fetch" message rather than a friendly one.
 - `GET /books` has no explicit ordering, so book order can change after updates.
-- No auth, no book text/reading view, no database migrations, no CI yet (see Roadmap).
+- No auth, no book text/reading view, no database migrations, no deployment yet (see Roadmap).
+- Tests cover the analyzer and `find_difficult_words` only — no API endpoint or frontend tests yet.
 
 ---
 
@@ -136,6 +139,7 @@ Being explicit about what this does *not* do yet:
 | Database | PostgreSQL 16 (Docker Compose for local dev) |
 | Frontend | React 19, React Router 7, Vite 8, Tailwind CSS v4, shadcn/ui, ESLint |
 | Testing  | pytest |
+| CI       | GitHub Actions |
 
 ---
 
@@ -189,6 +193,25 @@ npm install
 npm run dev
 ```
 App at `http://localhost:5173`.
+
+**6. Before pushing**
+```bash
+cd frontend
+npm run lint
+npm run build
+```
+CI runs the same commands, plus the backend tests.
+
+---
+
+## Continuous integration
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main` and on every pull request, with two jobs on `ubuntu-latest`:
+
+- **backend** — Python 3.13: `pip install -r requirements.txt`, then `python -m pytest tests`. `DATABASE_URL` and `GEMINI_API_KEY` are set to dummy values so the config loads; no real secrets are used and the tests don't touch the database or the Gemini API.
+- **frontend** — Node 22: `npm ci`, `npm run lint`, `npm run build`.
+
+ESLint (`frontend/eslint.config.js`) relaxes two rules for the shadcn-generated files in `src/components/ui/` only: `no-unused-vars` ignores a variable named `React`, and `react-refresh/only-export-components` is off. The project's own code keeps all rules.
 
 ---
 
@@ -270,7 +293,9 @@ Errors:
 
 **Phase 4 — Production readiness**
 - Database migrations (Alembic) instead of `create_all` on startup
-- CI that runs the test suite (and linting) on every push; more tests (API endpoints, frontend components)
+- *(Done)* CI on GitHub Actions: backend tests, frontend lint and build, on every push to `main` and on pull requests
+- More tests (API endpoints, frontend components)
 - Containerize the backend and frontend (only the database runs in Docker today) and deploy
+- Automatic deployment (CD) from GitHub Actions
 
 ---
