@@ -3,6 +3,8 @@ import Header from './components/Header'
 import AnalyzePage from './pages/AnalyzePage'
 import AssistantPage from './pages/AssistantPage'
 import HomePage from './pages/HomePage'
+import LoginPage from './pages/LoginPage'
+import RegisterPage from './pages/Register'
 
 
 function App() {
@@ -13,6 +15,8 @@ function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/analyze" element={<AnalyzePage />} />
         <Route path="/assistant" element={<AssistantPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />}/>
       </Routes>
     </div>
   )
