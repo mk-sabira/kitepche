@@ -1,4 +1,6 @@
 import { Link, NavLink } from 'react-router-dom'
+import AuthNav from './AuthNav'
+
 
 const navClass = ({ isActive }) =>
   `font-body ${isActive ? 'text-primary font-semibold' : 'text-ink hover:text-primary'}`
@@ -24,9 +26,7 @@ function Header() {
         <NavLink to="/assistant" className={navClass}>
           Ask AI
         </NavLink>
-        <button className="bg-highlight hover:bg-highlight-dark text-white font-medium px-4 py-2 rounded-full">
-          Login
-        </button>
+        <AuthNav />
       </nav>
     </header>
   )
