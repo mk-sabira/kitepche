@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Button } from '@/components/ui/button'
 import { fetchBook } from '../api/books'
 
 function BookPage() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const [book, setBook] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -45,10 +47,20 @@ function BookPage() {
             Ages {book.age_group}
           </span>
 
-          {book.text ? (
-            <p className="mt-6 font-body text-lg leading-8 text-ink whitespace-pre-wrap">
-              {book.text}
-            </p>
+            {book.text ? (
+            <>
+              <p className="mt-6 font-body text-lg leading-8 text-ink whitespace-pre-wrap">
+                {book.text}
+              </p>
+              <Button
+                className="mt-8"
+                onClick={() =>
+                  navigate('/assistant', { state: { text: book.text } })
+                }
+              >
+                Ask AI about this book
+              </Button>
+            </>
           ) : (
             <p className="mt-6 font-body text-ink/60">Text coming soon.</p>
           )}

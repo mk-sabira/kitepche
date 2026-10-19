@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { askAssistant } from '@/api/assistant'
 import { useAuth } from '@/context/auth-context'
 
@@ -19,7 +19,8 @@ import { Textarea } from '@/components/ui/textarea'
 
 function AssistantPage() {
   const { token, user, loading: authLoading, logout } = useAuth()
-  const [text, setText] = useState('')
+  const location = useLocation()
+  const [text, setText] = useState(location.state?.text ?? '')
   const [question, setQuestion] = useState('')
   const [language, setLanguage] = useState('en')
   const [result, setResult] = useState(null)
