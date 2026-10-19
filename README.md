@@ -6,7 +6,7 @@
 
 Kyrgyz is a low-resource language with very little existing NLP tooling. This project's core technical contribution is building that tooling — text analysis and readability scoring — from scratch, then wrapping it in a real product. On top of the analyzer sits an **AI reading assistant**: an LLM that answers questions about a text by calling the analyzer as a tool, so its answer rests on measured numbers, not on the model's impression alone.
 
-**Status:** MVP (minimum viable product) in active development. Working end-to-end: the readability engine and Analyze page, a database-backed book library, user accounts (register and log in), and the AI reading assistant (`/assistant`), which requires a login. Book content and a reading view, user profiles, and an admin panel are the next phase (see Roadmap). This is a local development project — it is not deployed.
+**Status:** MVP (minimum viable product) in active development. Working end-to-end: the readability engine and Analyze page, a database-backed book library with a reading page for each book, user accounts (register and log in), and the AI reading assistant (`/assistant`), which requires a login and can be opened from a book with its text filled in. The book texts are short placeholders for now. Reading history, user profiles, and an admin panel are the next phase (see Roadmap). This is a local development project — it is not deployed.
 
 Repository: [github.com/mk-sabira/kitepche](https://github.com/mk-sabira/kitepche)
 
@@ -38,19 +38,20 @@ The frontend calls the backend directly at `http://localhost:8000`; the backend'
 ## What's built (MVP)
 
 ### Backend
-- FastAPI app with eight endpoints:
+- FastAPI app with nine endpoints:
   - `GET /` — simple "API is alive" message
   - `GET /health` — health check
   - `POST /analyze` — accepts raw Kyrgyz text, returns readability metrics (returns a `400` with a readable message for empty text or text with no valid words/sentences)
-  - `GET /books` — returns the book catalog from the database, ordered by id
+  - `GET /books` — returns the published books from the database, ordered by id (without their text)
+  - `GET /books/{id}` — returns one published book with its text and source (`404` for a missing or unpublished book)
   - `POST /auth/register` — creates an account (email and password); the password is hashed and never returned
   - `POST /auth/login` — checks the credentials and returns a signed access token (JWT, valid for 24 hours)
   - `GET /auth/me` — returns the logged-in user; this is the check other endpoints use to require a login
   - `POST /assistant` — answers a question about a text using an LLM that calls the analyzer as a tool (see [AI reading assistant](#ai-reading-assistant)); it requires a login and is limited to 10 questions per user per hour
 - CORS middleware configured for the local Vite dev server (it also exposes the `Retry-After` header, so the browser can read how long to wait after a rate-limit response)
-- PostgreSQL database via SQLAlchemy, with a `books` table (`id`, `title`, `age_group`, `cover_url`) and a `users` table (`id`, `email`, `hashed_password`, `role`, `created_at`). Schema is managed with Alembic migrations (backend/alembic/)
+- PostgreSQL database via SQLAlchemy, with a `books` table (`id`, `title`, `age_group`, `cover_url`, `text` and `source` (both optional), and `status` (`draft`/`published`, default `published`)) and a `users` table (`id`, `email`, `hashed_password`, `role`, `created_at`). Schema is managed with Alembic migrations (`backend/alembic/`); the app does not create tables itself
 - Config via `pydantic-settings`, read from `backend/.env` (`DATABASE_URL`, `GEMINI_API_KEY`, `SECRET_KEY`). All three are required — the backend fails at startup if one is missing, rather than falling back to a hidden default
-- Idempotent seed script (`app/seed.py`) that inserts the 6 sample books, skipping any title that already exists
+- Seed script (`app/seed.py`) that loads the books from `backend/data/books.json` (6 books with short placeholder texts, `source: "placeholder"`). It matches books by title: new titles are inserted, existing ones are updated from the file, so the JSON file is the source of truth and the script is safe to run again
 - Original Kyrgyz-aware tokenizer (word/sentence segmentation handling Cyrillic script plus the Kyrgyz-specific letters ң, ө, ү)
 - Original vowel-based syllable counter for Kyrgyz words
 - Two readability scoring models implemented:
@@ -59,13 +60,14 @@ The frontend calls the backend directly at `http://localhost:8000`; the backend'
 - Returns word, sentence, character, and syllable counts alongside both readability scores
 - A `find_difficult_words` function that ranks a text's unique words by syllable count, then length, and returns the top 5 (used by the assistant)
 - A small in-memory rate limiter (sliding window per user) in front of the model call
-- pytest tests for the tokenizer (including a regression test for a bug where words containing `ң` were split in two), `find_difficult_words`, password hashing and tokens, the rate limiter, and the register, login, `/auth/me` and `/assistant` endpoints. The endpoint tests use an in-memory SQLite database and a fake model, so they need neither PostgreSQL nor the Gemini API
+- pytest tests for the tokenizer (including a regression test for a bug where words containing `ң` were split in two), `find_difficult_words`, password hashing and tokens, the rate limiter, and the register, login, `/auth/me`, `/assistant`, `/books` and `/books/{id}` endpoints (48 tests). The endpoint tests use an in-memory SQLite database and a fake model, so they need neither PostgreSQL nor the Gemini API
 
 ### Frontend
 - React 19 + Vite 8 + Tailwind CSS v4, with React Router for client-side routing
 - shadcn/ui components (button, card, input, textarea, select, badge, alert) for the assistant, login and register pages, with an `@/` import alias
-- Five routes: `/` (home), `/analyze`, `/assistant` ("Ask AI" in the header), `/login` and `/register`
+- Six routes: `/` (home), `/analyze`, `/assistant` ("Ask AI" in the header), `/login`, `/register` and `/books/:id`
 - Landing page with header, hero banner, and a book library fetched from the backend's `GET /books`, with loading and error states. The age-group filter (6-7, 8-9, 10-11, 12+) is built from whatever age groups the returned books have
+- Book page (`/books/:id`): each book card links to it. It fetches the book from `GET /books/{id}` and shows the title, age group and text, with loading and error ("Book not found.") states, "Text coming soon." for a book without text, and a link back to the library. An **"Ask AI about this book"** button opens `/assistant` with the book's text already filled in (passed through React Router navigation state)
 - Analyze page (`/analyze`): submits text to the backend's `POST /analyze` and displays word/sentence/syllable counts alongside ARI and Kyrgyz readability scores
 - Assistant page (`/assistant`): a form with the text, a question, and an answer language (English / Russian / Kyrgyz); shows the answer, a badge for each tool the model used, and an error alert when something fails. Logged-out visitors see a login card instead of the form; an expired login signs the user out, and the hourly limit shows a clear message
 - Login and register pages. The login state lives in a React context that restores a saved login on reload; the header shows "Log in" and "Sign up", or the user's email and "Log out"
@@ -126,9 +128,9 @@ Users register with an email and a password and log in to get an access token. T
 ## Scope of the MVP
 
 This is a functioning proof of concept, not yet a production product. Deliberately out of scope for this phase:
-- Book content — the database stores book metadata only (title, age group, cover); there is no book text or reading view yet
+- Real book content — the 6 books have short placeholder texts; they will be replaced with the author's own writing
 - User profiles and reading history
-- An admin panel (books are added by editing the seed data)
+- An admin panel (books are added by editing `backend/data/books.json` and re-running the seed)
 - Password reset and email verification
 - Deployment — there is no hosting and no automatic deployment (CD) yet. CI does exist (see [Continuous integration](#continuous-integration)), but there are no frontend tests yet
 - ML-based scoring (current scoring is formula-based; see Roadmap)
@@ -147,8 +149,10 @@ Being explicit about what this does *not* do yet:
 - **The API address (`http://localhost:8000`) is hardcoded** in the frontend.
 - The assistant's answer is shown as plain text, so Markdown formatting from the model appears as raw `**` markers.
 - If the backend can't be reached, the frontend shows the browser's generic "Failed to fetch" message rather than a friendly one.
-- No book text/reading view, No book text/reading view, no deployment yet (see Roadmap).
-- There are no frontend tests yet, and no tests for `/analyze` or `/books`.
+- **The book texts are short placeholders**, not real children's books yet.
+- **The assistant prefill is lost across login:** if a logged-out visitor clicks "Ask AI about this book" and then logs in, the text is not carried over and has to be pasted again.
+- No deployment yet (see Roadmap).
+- There are no frontend tests yet, and no tests for `/analyze`.
 
 ---
 
@@ -160,7 +164,7 @@ Being explicit about what this does *not* do yet:
 | AI       | Google Gemini API (`google-genai` SDK, Interactions API with function calling) |
 | Database | PostgreSQL 16 (Docker Compose for local dev) |
 | Frontend | React 19, React Router 7, Vite 8, Tailwind CSS v4, shadcn/ui, ESLint |
-| Testing  | pytest (FastAPI TestClient; in-memory SQLite for the auth and assistant tests) |
+| Testing  | pytest (FastAPI TestClient; in-memory SQLite for the auth, books and assistant tests) |
 | CI       | GitHub Actions |
 
 ---
@@ -200,7 +204,7 @@ Create the tables with Alembic, then seed (venv active, from backend/):
 ```bash
 cd backend
 alembic upgrade head       # creates the tables (run once per new database)
-python -m app.seed          # inserts the 6 sample books; safe to run again (skips existing titles)
+python -m app.seed          # loads the books from data/books.json; safe to run again (updates existing titles)
 ```
 
 **4. Tests**
@@ -311,12 +315,26 @@ Errors:
 - `429` — more than 10 questions per user per hour; the `Retry-After` header gives the seconds to wait
 - `502` — `{ "detail": "The assistant is unavailable, please try again" }` when the model call fails. The real error is logged server-side and not returned to the client
 
-**`GET /books`**
+**`GET /books`** — published books only, ordered by id; the list does not include the text.
 ```json
 [
   { "id": 1, "title": "Манас баатыры", "age_group": "10-11", "cover_url": "/books/book-1.jpg" }
 ]
 ```
+
+**`GET /books/{id}`**
+```json
+{
+  "id": 1,
+  "title": "Манас баатыры",
+  "age_group": "10-11",
+  "cover_url": "/books/book-1.jpg",
+  "text": "Илгери-илгери …",
+  "source": "placeholder"
+}
+```
+
+`text` and `source` may be `null`. Errors: `404` `{ "detail": "Book not found" }` for a missing or unpublished book; `422` for a non-numeric id.
 
 **`GET /health`** → `{ "status": "health ok" }`
 
@@ -326,13 +344,14 @@ Errors:
 
 **Phase 2 — Product foundation**
 - *(Done)* Analyze page wired to `POST /analyze`; books stored in PostgreSQL and served by `GET /books` (ordered by id)
-- *(Done)* Reproducible local setup: Docker Compose database, `.env`-based config,Alembic migrations, idempotent seed, working `requirements.txt`
+- *(Done)* Reproducible local setup: Docker Compose database, `.env`-based config, Alembic migrations, idempotent seed, working `requirements.txt`
 - *(Done)* AI reading assistant (`POST /assistant` + `/assistant` page) with two analyzer-backed tools
 - *(Done)* User registration and login (bcrypt, JWT), with login and register pages and an auth-aware header
 - *(Done)* `/assistant` requires a login and is rate-limited per user (10 per hour), so anonymous requests can't drain the Gemini quota
-- Book content: extend the `books` table with the book's text (and later, its stored readability score)
-- Reading flow: when a user opens a book, the frontend fetches its content from the backend (new endpoint, e.g. `GET /books/{id}`) and shows a reading page — with an **"Ask about this book"** entry point into the assistant, so the two halves of the project meet
-- Profile page with reading history ("mark as read")
+- *(Done)* Book text: `text`, `source` and `status` columns (Alembic migration), `GET /books/{id}`, seed data in `backend/data/books.json`
+- *(Done)* Reading page (`/books/:id`) with an **"Ask AI about this book"** button that opens the assistant with the text filled in, so the two halves of the project meet
+- Next: "mark as read" and a profile page with reading history
+- Then: replace the placeholder texts with the author's own writing (and later, store each book's readability score)
 - Admin panel: a restricted view for adding/editing/removing books in the catalog, gated behind the admin role (the `role` column already exists)
 
 **Phase 3 — ML & NLP depth** *(not required for the current MVP — see note below)*
@@ -345,7 +364,7 @@ Errors:
 
 **Phase 4 — Production readiness**
 - *(Done)* CI on GitHub Actions: backend tests, frontend lint and build, on every push to `main` and on pull requests
-- More tests: `/analyze`, `/books` and the frontend components
+- More tests: `/analyze` and the frontend components
 - Before public hosting: move the login token from `localStorage` to an httpOnly cookie, make the API address configurable, move the rate-limit counter out of memory if more than one server process runs, use a hosted database, and add a privacy note and terms
 - Containerize the backend and frontend (only the database runs in Docker today) and deploy
 - Automatic deployment (CD) from GitHub Actions
