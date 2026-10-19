@@ -1,9 +1,12 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
+
 
 function BookCard({ book }) {
   const [imageFailed, setImageFailed] = useState(false)
 
   return (
+    <Link to={`/books/${book.id}`} className="block">
     <article className="bg-paper rounded-2xl overflow-hidden shadow-sm border border-paper-soft hover:shadow-md transition-shadow">
       <div className="aspect-[3/4] overflow-hidden bg-paper-soft">
         {imageFailed || !book.cover_url ? (
@@ -28,6 +31,7 @@ function BookCard({ book }) {
         </span>
       </div>
     </article>
+    </Link>
   )
 }
 
