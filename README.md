@@ -6,7 +6,7 @@
 
 Kyrgyz is a low-resource language with very little existing NLP tooling. This project's core technical contribution is building that tooling — text analysis and readability scoring — from scratch, then wrapping it in a real product. On top of the analyzer sits an **AI reading assistant**: an LLM that answers questions about a text by calling the analyzer as a tool, so its answer rests on measured numbers, not on the model's impression alone.
 
-**Status:** MVP (minimum viable product) in active development. Working end-to-end: the readability engine and Analyze page, a database-backed book library, and the AI reading assistant (`/assistant`). Book content / reading flow, authentication, and an admin panel are the next phase (see Roadmap). This is a local development project — it is not deployed.
+**Status:** MVP (minimum viable product) in active development. Working end-to-end: the readability engine and Analyze page, a database-backed book library, user accounts (register and log in), and the AI reading assistant (`/assistant`), which requires a login. Book content and a reading view, user profiles, and an admin panel are the next phase (see Roadmap). This is a local development project — it is not deployed.
 
 Repository: [github.com/mk-sabira/kitepche](https://github.com/mk-sabira/kitepche)
 
@@ -16,15 +16,16 @@ Repository: [github.com/mk-sabira/kitepche](https://github.com/mk-sabira/kitepch
 
 The project is split into two services plus a database:
 
-1. **Backend (`/backend`)** — a FastAPI service exposing the Kyrgyz text readability analyzer, the book catalog, and the AI reading assistant as an API. Books are stored in PostgreSQL via SQLAlchemy. The assistant calls Google's Gemini API.
-2. **Frontend (`/frontend`)** — a React web app for browsing the book library (loaded from the backend), analyzing Kyrgyz text readability, and asking the AI assistant about a text. Login UI is in place but not yet wired to authentication (see Roadmap).
+1. **Backend (`/backend`)** — a FastAPI service exposing the Kyrgyz text readability analyzer, the book catalog, user accounts (register, log in), and the AI reading assistant as an API. Data is stored in PostgreSQL via SQLAlchemy. The assistant calls Google's Gemini API.
+2. **Frontend (`/frontend`)** — a React web app for browsing the book library, analyzing Kyrgyz text readability, creating an account and logging in, and asking the AI assistant about a text (logged-in users only).
 3. **Database** — PostgreSQL 16, run locally with Docker Compose (`docker-compose.yml` at the repo root).
 
 ```
 Browser (React, :5173)
-   │  fetch http://localhost:8000/...
+   │  fetch http://localhost:8000/...   (Authorization: Bearer <token> for /assistant)
    ▼
-FastAPI (:8000) ──► analyzer.py (tokenizer, syllables, ARI, Ateşman-style score)
+FastAPI (:8000) ──► auth (bcrypt password hashes, JWT access tokens)
+   │          ├──► analyzer.py (tokenizer, syllables, ARI, Ateşman-style score)
    │          └──► assistant.py ──► Gemini API (tool calling)
    ▼
 PostgreSQL 16 (Docker, localhost:5433)
@@ -37,15 +38,18 @@ The frontend calls the backend directly at `http://localhost:8000`; the backend'
 ## What's built (MVP)
 
 ### Backend
-- FastAPI app with five endpoints:
+- FastAPI app with eight endpoints:
   - `GET /` — simple "API is alive" message
   - `GET /health` — health check
   - `POST /analyze` — accepts raw Kyrgyz text, returns readability metrics (returns a `400` with a readable message for empty text or text with no valid words/sentences)
-  - `GET /books` — returns the book catalog from the database
-  - `POST /assistant` — answers a question about a text using an LLM that calls the analyzer as a tool (see [AI reading assistant](#ai-reading-assistant))
-- CORS middleware configured for the local Vite dev server
-- PostgreSQL database via SQLAlchemy, with a `books` table (`id`, `title`, `age_group`, `cover_url`). Tables are created on backend startup (`Base.metadata.create_all`)
-- Config via `pydantic-settings`, read from `backend/.env` (`DATABASE_URL`, `GEMINI_API_KEY`). Both are required — the backend fails at startup if they're missing, rather than falling back to a hidden default
+  - `GET /books` — returns the book catalog from the database, ordered by id
+  - `POST /auth/register` — creates an account (email and password); the password is hashed and never returned
+  - `POST /auth/login` — checks the credentials and returns a signed access token (JWT, valid for 24 hours)
+  - `GET /auth/me` — returns the logged-in user; this is the check other endpoints use to require a login
+  - `POST /assistant` — answers a question about a text using an LLM that calls the analyzer as a tool (see [AI reading assistant](#ai-reading-assistant)); it requires a login and is limited to 10 questions per user per hour
+- CORS middleware configured for the local Vite dev server (it also exposes the `Retry-After` header, so the browser can read how long to wait after a rate-limit response)
+- PostgreSQL database via SQLAlchemy, with a `books` table (`id`, `title`, `age_group`, `cover_url`) and a `users` table (`id`, `email`, `hashed_password`, `role`, `created_at`). Tables are created on backend startup (`Base.metadata.create_all`)
+- Config via `pydantic-settings`, read from `backend/.env` (`DATABASE_URL`, `GEMINI_API_KEY`, `SECRET_KEY`). All three are required — the backend fails at startup if one is missing, rather than falling back to a hidden default
 - Idempotent seed script (`app/seed.py`) that inserts the 6 sample books, skipping any title that already exists
 - Original Kyrgyz-aware tokenizer (word/sentence segmentation handling Cyrillic script plus the Kyrgyz-specific letters ң, ө, ү)
 - Original vowel-based syllable counter for Kyrgyz words
@@ -54,25 +58,26 @@ The frontend calls the backend directly at `http://localhost:8000`; the backend'
   - A **Flesch-style formula (Ateşman constants)**, adapted from Turkish as a first-pass approximation in the absence of a native Kyrgyz readability formula — not yet validated for Kyrgyz (see [Limitations](#limitations))
 - Returns word, sentence, character, and syllable counts alongside both readability scores
 - A `find_difficult_words` function that ranks a text's unique words by syllable count, then length, and returns the top 5 (used by the assistant)
-- pytest unit tests for the tokenizer (including a regression test for a bug where words containing `ң` were split in two) and for `find_difficult_words`
+- A small in-memory rate limiter (sliding window per user) in front of the model call
+- pytest tests for the tokenizer (including a regression test for a bug where words containing `ң` were split in two), `find_difficult_words`, password hashing and tokens, the rate limiter, and the register, login, `/auth/me` and `/assistant` endpoints. The endpoint tests use an in-memory SQLite database and a fake model, so they need neither PostgreSQL nor the Gemini API
 
 ### Frontend
 - React 19 + Vite 8 + Tailwind CSS v4, with React Router for client-side routing
-- shadcn/ui components (button, card, input, textarea, select, badge, alert) for the assistant page, with an `@/` import alias
-- Three routes: `/` (home), `/analyze`, and `/assistant` ("Ask AI" in the header)
+- shadcn/ui components (button, card, input, textarea, select, badge, alert) for the assistant, login and register pages, with an `@/` import alias
+- Five routes: `/` (home), `/analyze`, `/assistant` ("Ask AI" in the header), `/login` and `/register`
 - Landing page with header, hero banner, and a book library fetched from the backend's `GET /books`, with loading and error states. The age-group filter (6-7, 8-9, 10-11, 12+) is built from whatever age groups the returned books have
 - Analyze page (`/analyze`): submits text to the backend's `POST /analyze` and displays word/sentence/syllable counts alongside ARI and Kyrgyz readability scores
-- Assistant page (`/assistant`): a form with the text, a question, and an answer language (English / Russian / Kyrgyz); shows the answer, a badge for each tool the model used, and an error alert when something fails
-- Small API layer in `src/api/` (`books.js`, `analyze.js`, `assistant.js`) so components don't call `fetch` directly
+- Assistant page (`/assistant`): a form with the text, a question, and an answer language (English / Russian / Kyrgyz); shows the answer, a badge for each tool the model used, and an error alert when something fails. Logged-out visitors see a login card instead of the form; an expired login signs the user out, and the hourly limit shows a clear message
+- Login and register pages. The login state lives in a React context that restores a saved login on reload; the header shows "Log in" and "Sign up", or the user's email and "Log out"
+- Small API layer in `src/api/` (`books.js`, `analyze.js`, `assistant.js`, `auth.js`) so components don't call `fetch` directly
 - Book cards fall back to showing the title when a cover image fails to load
-- Login button present in the header UI as a placeholder — not yet wired to any logic (auth doesn't exist yet, see Roadmap)
 - Book cover images are still static files in `frontend/public/books/`; the database stores their paths
 
 ---
 
 ## AI reading assistant
 
-A parent or teacher pastes a Kyrgyz text and asks a question in plain language — *"Is this suitable for a 7-year-old?"*, *"Which words might be hard?"* — and picks the answer language (Kyrgyz, Russian, or English).
+A logged-in parent or teacher pastes a Kyrgyz text and asks a question in plain language — *"Is this suitable for a 7-year-old?"*, *"Which words might be hard?"* — and picks the answer language (Kyrgyz, Russian, or English).
 
 Instead of letting the model judge the text on its own, the backend gives it two **tools** backed by the project's own analyzer code, and the model decides which to call:
 
@@ -84,8 +89,8 @@ Instead of letting the model judge the text on its own, the backend gives it two
 The model can call one tool, both, or neither (for an off-topic question it is instructed to decline briefly). The backend runs a tool-calling loop with a cap on the number of rounds, then returns the final answer together with the list of tools that were called — the frontend shows those as badges, so it's visible which analyzer tools the model consulted.
 
 ```
-Browser  ──POST /assistant {text, question, language}──►  FastAPI
-                                                            │
+Browser  ──POST /assistant {text, question, language} + login token──►  FastAPI
+                                                            │  checks the login, then the hourly limit
                                                             ▼
                                               Gemini (Interactions API)
                                                  │ decides: call a tool?
@@ -105,13 +110,28 @@ The system prompt tells the model that the scores come from formulas not yet val
 
 ---
 
+## Authentication
+
+Users register with an email and a password and log in to get an access token. The assistant endpoint requires one.
+
+- **Passwords** are hashed with bcrypt (through `pwdlib`) and never stored or returned in plain text. They are Unicode-normalized (NFKC) before hashing, so the same Kyrgyz or Russian password typed on two devices gives the same result. bcrypt reads only the first 72 bytes and a Cyrillic letter takes 2 bytes, so passwords over 72 bytes (about 36 Cyrillic letters) are rejected with a clear message instead of being silently cut off. The minimum is 8 characters.
+- **Emails** are trimmed and lowercased, so `Dati@x.com` and `dati@x.com` are one account.
+- **Login** uses the standard OAuth2 password form (the email goes in the `username` field) and returns a signed JWT (HS256) that carries the user's id and expires after 24 hours. A wrong email and a wrong password get the same `401` message, and an unknown email still runs a dummy password check, so response time doesn't reveal which emails have accounts.
+- **Protected endpoints** use a `get_current_user` dependency: it verifies the token's signature and expiry (a token without an expiry is refused), then loads the user from the database on every request. The role is read from the database, not from the token.
+- **Rate limit:** `/assistant` allows 10 questions per user per hour (`429` with a `Retry-After` header after that). Empty requests don't count.
+- **Roles:** every user has a `role` (`reader` by default). Nothing enforces `admin` yet.
+
+---
+
 ## Scope of the MVP
 
 This is a functioning proof of concept, not yet a production product. Deliberately out of scope for this phase:
 - Book content — the database stores book metadata only (title, age group, cover); there is no book text or reading view yet
+- User profiles and reading history
+- An admin panel (books are added by editing the seed data)
+- Password reset and email verification
 - Database migrations — tables are created on startup with `create_all`, which creates missing tables but does not alter existing ones; there is no migration tool (e.g. Alembic) yet
-- User accounts and authentication
-- Deployment — there is no hosting and no automatic deployment (CD) yet. CI does exist (see [Continuous integration](#continuous-integration)), but tests cover only the analyzer and `find_difficult_words`; there are no API or frontend tests yet
+- Deployment — there is no hosting and no automatic deployment (CD) yet. CI does exist (see [Continuous integration](#continuous-integration)), but there are no frontend tests yet
 - ML-based scoring (current scoring is formula-based; see Roadmap)
 
 ---
@@ -121,12 +141,15 @@ This is a functioning proof of concept, not yet a production product. Deliberate
 Being explicit about what this does *not* do yet:
 - **The readability formulas are not validated for Kyrgyz.** ARI is language-agnostic, and the second score uses Ateşman's constants from Turkish. Both are first-pass approximations until they can be checked against age-labelled Kyrgyz texts.
 - **Assistant answers in Kyrgyz are uneven** with the small model used for development; English and Russian answers are more reliable.
-- **`/assistant` has no authentication or rate limiting.** Every request spends Gemini API quota, so it must not be exposed publicly as is.
+- **The login token is stored in the browser's `localStorage`**, where any script injected into the page could read it. Moving it to an httpOnly cookie is planned before public hosting.
+- **The rate limiter keeps its counts in memory**, so they reset when the backend restarts and are not shared between server processes.
+- **Tokens can't be revoked before they expire** (24 hours), and there is no password reset or email verification.
+- **The `role` column exists, but nothing uses it yet** (there is no admin panel).
+- **The API address (`http://localhost:8000`) is hardcoded** in the frontend.
 - The assistant's answer is shown as plain text, so Markdown formatting from the model appears as raw `**` markers.
 - If the backend can't be reached, the frontend shows the browser's generic "Failed to fetch" message rather than a friendly one.
-- `GET /books` has no explicit ordering, so book order can change after updates.
-- No auth, no book text/reading view, no database migrations, no deployment yet (see Roadmap).
-- Tests cover the analyzer and `find_difficult_words` only — no API endpoint or frontend tests yet.
+- No book text/reading view, no database migrations, no deployment yet (see Roadmap).
+- There are no frontend tests yet, and no tests for `/analyze` or `/books`.
 
 ---
 
@@ -134,18 +157,18 @@ Being explicit about what this does *not* do yet:
 
 | Layer    | Tech |
 |----------|------|
-| Backend  | Python, FastAPI, Pydantic v2, pydantic-settings, Uvicorn, SQLAlchemy 2, psycopg2 |
+| Backend  | Python, FastAPI, Pydantic v2, pydantic-settings, Uvicorn, SQLAlchemy 2, psycopg2, PyJWT, pwdlib (bcrypt), email-validator |
 | AI       | Google Gemini API (`google-genai` SDK, Interactions API with function calling) |
 | Database | PostgreSQL 16 (Docker Compose for local dev) |
 | Frontend | React 19, React Router 7, Vite 8, Tailwind CSS v4, shadcn/ui, ESLint |
-| Testing  | pytest |
+| Testing  | pytest (FastAPI TestClient; in-memory SQLite for the auth and assistant tests) |
 | CI       | GitHub Actions |
 
 ---
 
 ## Running locally
 
-Prerequisites: Python 3, Node.js + npm, Docker (with Compose), and a Gemini API key.
+Prerequisites: Python 3.13, Node.js + npm, Docker (with Compose), and a Gemini API key.
 
 **1. Database**
 
@@ -161,9 +184,9 @@ This starts PostgreSQL 16 in a container (`kitepche-postgres`) on `localhost:543
 cd backend
 cp .env.example .env
 ```
-Then edit `backend/.env` and replace `your_key_here` with your Gemini API key. The `DATABASE_URL` already matches the Docker Compose database.
+Then edit `backend/.env`: replace `your_key_here` with your Gemini API key, and replace the `SECRET_KEY` placeholder with a long random value, for example the output of `openssl rand -hex 32`. The `DATABASE_URL` already matches the Docker Compose database.
 
-`.env` is gitignored. The backend will not start without both values.
+`.env` is gitignored. The backend will not start without all three values.
 
 **3. Backend**
 ```bash
@@ -172,7 +195,7 @@ python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activa
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
-API at `http://localhost:8000`, interactive docs at `http://localhost:8000/docs`.
+API at `http://localhost:8000`, interactive docs at `http://localhost:8000/docs`. Start `uvicorn` from the `backend/` folder.
 
 Tables are created when the backend starts, so start it at least once **before** seeding. Then, in another terminal (venv active):
 ```bash
@@ -192,7 +215,7 @@ cd frontend
 npm install
 npm run dev
 ```
-App at `http://localhost:5173`.
+App at `http://localhost:5173`. To use the AI assistant, create an account with "Sign up" in the header; the assistant requires a login.
 
 **6. Before pushing**
 ```bash
@@ -208,7 +231,7 @@ CI runs the same commands, plus the backend tests.
 
 GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main` and on every pull request, with two jobs on `ubuntu-latest`:
 
-- **backend** — Python 3.13: `pip install -r requirements.txt`, then `python -m pytest tests`. `DATABASE_URL` and `GEMINI_API_KEY` are set to dummy values so the config loads; no real secrets are used and the tests don't touch the database or the Gemini API.
+- **backend** — Python 3.13: `pip install -r requirements.txt`, then `python -m pytest tests`. `DATABASE_URL`, `GEMINI_API_KEY` and `SECRET_KEY` are set to dummy values so the config loads; no real secrets are used. The tests don't touch PostgreSQL or the Gemini API (the auth and assistant tests use an in-memory SQLite database and a fake model).
 - **frontend** — Node 22: `npm ci`, `npm run lint`, `npm run build`.
 
 ESLint (`frontend/eslint.config.js`) relaxes two rules for the shadcn-generated files in `src/components/ui/` only: `no-unused-vars` ignores a variable named `React`, and `react-refresh/only-export-components` is off. The project's own code keeps all rules.
@@ -238,7 +261,34 @@ ESLint (`frontend/eslint.config.js`) relaxes two rules for the shadcn-generated 
 
 Errors: `400` with `{ "detail": "Text is required" }` for empty text, or `{ "detail": "Text has no valid words or sentences" }` when nothing analyzable is found.
 
-**`POST /assistant`**
+**`POST /auth/register`**
+```json
+// Request
+{ "email": "reader@example.com", "password": "at least 8 characters" }
+
+// Response (201) — the password hash is never returned
+{ "id": 1, "email": "reader@example.com", "role": "reader" }
+```
+
+Errors: `409` `{ "detail": "Email already registered" }`; `422` for an invalid email, a password under 8 characters, or a password over 72 bytes.
+
+**`POST /auth/login`** — form-encoded (`application/x-www-form-urlencoded`); the email goes in the `username` field.
+```json
+// Response
+{ "access_token": "...", "token_type": "bearer" }
+```
+
+Error: `401` `{ "detail": "Incorrect email or password" }` (the same for a wrong password and an unknown email).
+
+**`GET /auth/me`** — requires `Authorization: Bearer <token>`.
+```json
+// Response
+{ "id": 1, "email": "reader@example.com", "role": "reader" }
+```
+
+Error: `401` when the token is missing, invalid or expired, or the user no longer exists.
+
+**`POST /assistant`** — requires `Authorization: Bearer <token>`.
 ```json
 // Request — language is one of "ky", "ru", "en" (defaults to "en")
 {
@@ -255,8 +305,10 @@ Errors: `400` with `{ "detail": "Text is required" }` for empty text, or `{ "det
 ```
 
 Errors:
+- `401` — missing, invalid or expired token
 - `422` — invalid input caught by FastAPI validation (missing or empty `text`/`question`, or a `language` other than `ky`/`ru`/`en`)
 - `400` — `{ "detail": "Text and question must not be empty" }` when `text` or `question` is whitespace only
+- `429` — more than 10 questions per user per hour; the `Retry-After` header gives the seconds to wait
 - `502` — `{ "detail": "The assistant is unavailable, please try again" }` when the model call fails. The real error is logged server-side and not returned to the client
 
 **`GET /books`**
@@ -273,15 +325,15 @@ Errors:
 ## Roadmap
 
 **Phase 2 — Product foundation**
-- *(Done)* Analyze page wired to `POST /analyze`; books stored in PostgreSQL and served by `GET /books`
+- *(Done)* Analyze page wired to `POST /analyze`; books stored in PostgreSQL and served by `GET /books` (ordered by id)
 - *(Done)* Reproducible local setup: Docker Compose database, `.env`-based config, tables created on startup, idempotent seed, working `requirements.txt`
 - *(Done)* AI reading assistant (`POST /assistant` + `/assistant` page) with two analyzer-backed tools
-- Protect `/assistant` before it is reachable by anyone else: rate limiting at minimum, and auth once it exists, so the Gemini quota can't be drained
-- Small fixes: explicit ordering for `GET /books`, render the assistant's Markdown properly, a friendly message when the backend is unreachable, and remove the unused Vite `/api` proxy (or switch to it)
+- *(Done)* User registration and login (bcrypt, JWT), with login and register pages and an auth-aware header
+- *(Done)* `/assistant` requires a login and is rate-limited per user (10 per hour), so anonymous requests can't drain the Gemini quota
 - Book content: extend the `books` table with the book's text (and later, its stored readability score)
 - Reading flow: when a user opens a book, the frontend fetches its content from the backend (new endpoint, e.g. `GET /books/{id}`) and shows a reading page — with an **"Ask about this book"** entry point into the assistant, so the two halves of the project meet
-- User registration and login: build real auth behind the existing "Login" button in the header
-- Admin panel: a restricted view for adding/editing/removing books in the catalog, gated behind auth once it exists
+- Profile page with reading history ("mark as read")
+- Admin panel: a restricted view for adding/editing/removing books in the catalog, gated behind the admin role (the `role` column already exists)
 
 **Phase 3 — ML & NLP depth** *(not required for the current MVP — see note below)*
 - Validate the readability formulas against age-labelled Kyrgyz texts, and build a proper Kyrgyz readability formula (replacing the borrowed Turkish constants) from that data
@@ -292,9 +344,10 @@ Errors:
 > **On ML:** the current MVP's readability scoring is fully functional using classical formulas (ARI + an adapted Ateşman formula) — no ML is required for it to work end-to-end. ML becomes worthwhile once a labeled Kyrgyz corpus (text tagged by reading level) exists to train and validate against; until then it's tracked as a future enhancement, not a blocker.
 
 **Phase 4 — Production readiness**
-- Database migrations (Alembic) instead of `create_all` on startup
+- Database migrations (Alembic) instead of `create_all` on startup — needed before the `books` table gets new columns
 - *(Done)* CI on GitHub Actions: backend tests, frontend lint and build, on every push to `main` and on pull requests
-- More tests (API endpoints, frontend components)
+- More tests: `/analyze`, `/books` and the frontend components
+- Before public hosting: move the login token from `localStorage` to an httpOnly cookie, make the API address configurable, move the rate-limit counter out of memory if more than one server process runs, use a hosted database, and add a privacy note and terms
 - Containerize the backend and frontend (only the database runs in Docker today) and deploy
 - Automatic deployment (CD) from GitHub Actions
 

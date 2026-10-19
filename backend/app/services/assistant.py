@@ -110,7 +110,7 @@ def ask_assistant(text: str, question: str, language: str = "en", max_turns: int
         interaction = client.interactions.create(
             model=MODEL,
             input=results,
-            tools=[ANALYZE_TOOL],
+            tools=TOOLS,
             previous_interaction_id=interaction.id,
             system_instruction=SYSTEM,
         )
