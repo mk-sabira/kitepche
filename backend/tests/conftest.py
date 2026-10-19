@@ -5,7 +5,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.api.routes import auth
+from app.api.routes import auth, books
+from app.models.book import Book  # noqa: F401  (registers the books table)
 from app.core.database import Base, get_db
 from app.models.user import User  # noqa: F401  (registers the users table)
 
@@ -30,6 +31,7 @@ def db_session():
 def client(db_session):
     app = FastAPI()
     app.include_router(auth.router)
+    app.include_router(books.router)
 
     def override_get_db():
         yield db_session
