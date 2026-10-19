@@ -48,7 +48,7 @@ The frontend calls the backend directly at `http://localhost:8000`; the backend'
   - `GET /auth/me` — returns the logged-in user; this is the check other endpoints use to require a login
   - `POST /assistant` — answers a question about a text using an LLM that calls the analyzer as a tool (see [AI reading assistant](#ai-reading-assistant)); it requires a login and is limited to 10 questions per user per hour
 - CORS middleware configured for the local Vite dev server (it also exposes the `Retry-After` header, so the browser can read how long to wait after a rate-limit response)
-- PostgreSQL database via SQLAlchemy, with a `books` table (`id`, `title`, `age_group`, `cover_url`) and a `users` table (`id`, `email`, `hashed_password`, `role`, `created_at`). Tables are created on backend startup (`Base.metadata.create_all`)
+- PostgreSQL database via SQLAlchemy, with a `books` table (`id`, `title`, `age_group`, `cover_url`) and a `users` table (`id`, `email`, `hashed_password`, `role`, `created_at`). Schema is managed with Alembic migrations (backend/alembic/)
 - Config via `pydantic-settings`, read from `backend/.env` (`DATABASE_URL`, `GEMINI_API_KEY`, `SECRET_KEY`). All three are required — the backend fails at startup if one is missing, rather than falling back to a hidden default
 - Idempotent seed script (`app/seed.py`) that inserts the 6 sample books, skipping any title that already exists
 - Original Kyrgyz-aware tokenizer (word/sentence segmentation handling Cyrillic script plus the Kyrgyz-specific letters ң, ө, ү)
@@ -130,7 +130,6 @@ This is a functioning proof of concept, not yet a production product. Deliberate
 - User profiles and reading history
 - An admin panel (books are added by editing the seed data)
 - Password reset and email verification
-- Database migrations — tables are created on startup with `create_all`, which creates missing tables but does not alter existing ones; there is no migration tool (e.g. Alembic) yet
 - Deployment — there is no hosting and no automatic deployment (CD) yet. CI does exist (see [Continuous integration](#continuous-integration)), but there are no frontend tests yet
 - ML-based scoring (current scoring is formula-based; see Roadmap)
 
@@ -148,7 +147,7 @@ Being explicit about what this does *not* do yet:
 - **The API address (`http://localhost:8000`) is hardcoded** in the frontend.
 - The assistant's answer is shown as plain text, so Markdown formatting from the model appears as raw `**` markers.
 - If the backend can't be reached, the frontend shows the browser's generic "Failed to fetch" message rather than a friendly one.
-- No book text/reading view, no database migrations, no deployment yet (see Roadmap).
+- No book text/reading view, No book text/reading view, no deployment yet (see Roadmap).
 - There are no frontend tests yet, and no tests for `/analyze` or `/books`.
 
 ---
@@ -197,9 +196,10 @@ uvicorn app.main:app --reload
 ```
 API at `http://localhost:8000`, interactive docs at `http://localhost:8000/docs`. Start `uvicorn` from the `backend/` folder.
 
-Tables are created when the backend starts, so start it at least once **before** seeding. Then, in another terminal (venv active):
+Create the tables with Alembic, then seed (venv active, from backend/):
 ```bash
 cd backend
+alembic upgrade head       # creates the tables (run once per new database)
 python -m app.seed          # inserts the 6 sample books; safe to run again (skips existing titles)
 ```
 
@@ -326,7 +326,7 @@ Errors:
 
 **Phase 2 — Product foundation**
 - *(Done)* Analyze page wired to `POST /analyze`; books stored in PostgreSQL and served by `GET /books` (ordered by id)
-- *(Done)* Reproducible local setup: Docker Compose database, `.env`-based config, tables created on startup, idempotent seed, working `requirements.txt`
+- *(Done)* Reproducible local setup: Docker Compose database, `.env`-based config,Alembic migrations, idempotent seed, working `requirements.txt`
 - *(Done)* AI reading assistant (`POST /assistant` + `/assistant` page) with two analyzer-backed tools
 - *(Done)* User registration and login (bcrypt, JWT), with login and register pages and an auth-aware header
 - *(Done)* `/assistant` requires a login and is rate-limited per user (10 per hour), so anonymous requests can't drain the Gemini quota
@@ -344,7 +344,6 @@ Errors:
 > **On ML:** the current MVP's readability scoring is fully functional using classical formulas (ARI + an adapted Ateşman formula) — no ML is required for it to work end-to-end. ML becomes worthwhile once a labeled Kyrgyz corpus (text tagged by reading level) exists to train and validate against; until then it's tracked as a future enhancement, not a blocker.
 
 **Phase 4 — Production readiness**
-- Database migrations (Alembic) instead of `create_all` on startup — needed before the `books` table gets new columns
 - *(Done)* CI on GitHub Actions: backend tests, frontend lint and build, on every push to `main` and on pull requests
 - More tests: `/analyze`, `/books` and the frontend components
 - Before public hosting: move the login token from `localStorage` to an httpOnly cookie, make the API address configurable, move the rate-limit counter out of memory if more than one server process runs, use a hosted database, and add a privacy note and terms
