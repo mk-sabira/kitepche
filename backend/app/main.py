@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import health, analyze, books, assistant, auth
 from app.core.config import settings
+from app.core.origin import add_origin_check
 
 
 # //getting books cover from FE
@@ -16,6 +17,10 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["Retry-After"],
 )
+
+
+
+add_origin_check(app, settings.cors_origin_list)
 
 #routes
 

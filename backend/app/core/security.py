@@ -10,6 +10,7 @@ from app.core.config import settings
 MAX_PASSWORD_BYTES = 72
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 24 * 60
+ACCESS_TOKEN_COOKIE = "access_token"
 
 password_hash = PasswordHash((BcryptHasher(),))
 
