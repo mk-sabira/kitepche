@@ -6,7 +6,7 @@
 
 Kyrgyz is a low-resource language with very little existing NLP tooling. This project's core technical contribution is building that tooling — text analysis and readability scoring — from scratch, then wrapping it in a real product. On top of the analyzer sits an **AI reading assistant**: an LLM that answers questions about a text by calling the analyzer as a tool, so its answer rests on measured numbers, not on the model's impression alone.
 
-**Status:** MVP (minimum viable product) in active development. Working end-to-end: the readability engine and Analyze page, a database-backed book library with a reading page for each book, user accounts (register and log in), and the AI reading assistant (`/assistant`), which requires a login and can be opened from a book with its text filled in. The book texts are short placeholders for now. Reading history, user profiles, and an admin panel are the next phase (see Roadmap). This is a local development project — it is not deployed.
+**Status:** MVP (minimum viable product) in active development. Working end-to-end: the readability engine and Analyze page, a database-backed book library with a reading page for each book, user accounts (register, log in and log out, with the login kept in an httpOnly cookie), and the AI reading assistant (`/assistant`), which requires a login and can be opened from a book with its text filled in. The book texts are short placeholders for now. Reading history, user profiles, and an admin panel are the next phase (see Roadmap). This is a local development project — it is not deployed.
 
 Repository: [github.com/mk-sabira/kitepche](https://github.com/mk-sabira/kitepche)
 
@@ -22,35 +22,37 @@ The project is split into two services plus a database:
 
 ```
 Browser (React, :5173)
-   │  fetch http://localhost:8000/...   (Authorization: Bearer <token> for /assistant)
+   │  fetch http://localhost:8000/...   (login cookie sent with credentials: 'include')
    ▼
-FastAPI (:8000) ──► auth (bcrypt password hashes, JWT access tokens)
+FastAPI (:8000) ──► auth (bcrypt password hashes, JWT in an httpOnly cookie, Origin check)
    │          ├──► analyzer.py (tokenizer, syllables, ARI, Ateşman-style score)
    │          └──► assistant.py ──► Gemini API (tool calling)
    ▼
 PostgreSQL 16 (Docker, localhost:5433)
 ```
 
-The frontend calls the backend directly at `http://localhost:8000`; the backend's CORS middleware allows the Vite dev server origin (`http://localhost:5173` / `http://127.0.0.1:5173`).
+The frontend calls the backend directly at the address in `VITE_API_URL` (default `http://localhost:8000`). The backend's CORS middleware allows the origins listed in `CORS_ORIGINS` (default: the Vite dev server, `http://localhost:5173` and `http://127.0.0.1:5173`) and allows credentials, so the browser can send the login cookie.
 
 ---
 
 ## What's built (MVP)
 
 ### Backend
-- FastAPI app with nine endpoints:
+- FastAPI app with ten endpoints:
   - `GET /` — simple "API is alive" message
   - `GET /health` — health check
   - `POST /analyze` — accepts raw Kyrgyz text, returns readability metrics (returns a `400` with a readable message for empty text or text with no valid words/sentences)
   - `GET /books` — returns the published books from the database, ordered by id (without their text)
   - `GET /books/{id}` — returns one published book with its text and source (`404` for a missing or unpublished book)
   - `POST /auth/register` — creates an account (email and password); the password is hashed and never returned
-  - `POST /auth/login` — checks the credentials and returns a signed access token (JWT, valid for 24 hours)
-  - `GET /auth/me` — returns the logged-in user; this is the check other endpoints use to require a login
+  - `POST /auth/login` — checks the credentials, sets a signed access token (JWT, valid for 24 hours) in an httpOnly cookie, and returns the user
+  - `POST /auth/logout` — clears the login cookie
+  - `GET /auth/me` — returns the logged-in user (read from the cookie); this is the check other endpoints use to require a login
   - `POST /assistant` — answers a question about a text using an LLM that calls the analyzer as a tool (see [AI reading assistant](#ai-reading-assistant)); it requires a login and is limited to 10 questions per user per hour
-- CORS middleware configured for the local Vite dev server (it also exposes the `Retry-After` header, so the browser can read how long to wait after a rate-limit response)
+- CORS middleware for the origins in `CORS_ORIGINS` (default: the local Vite dev server), with credentials allowed for the login cookie; it also exposes the `Retry-After` header, so the browser can read how long to wait after a rate-limit response
+- An Origin check (`app/core/origin.py`): a `POST`/`PUT`/`PATCH`/`DELETE` request whose `Origin` header is not in `CORS_ORIGINS` gets `403`, as a defense against cross-site request forgery (see [Authentication](#authentication))
 - PostgreSQL database via SQLAlchemy, with a `books` table (`id`, `title`, `age_group`, `cover_url`, `text` and `source` (both optional), and `status` (`draft`/`published`, default `published`)) and a `users` table (`id`, `email`, `hashed_password`, `role`, `created_at`). Schema is managed with Alembic migrations (`backend/alembic/`); the app does not create tables itself
-- Config via `pydantic-settings`, read from `backend/.env` (`DATABASE_URL`, `GEMINI_API_KEY`, `SECRET_KEY`). All three are required — the backend fails at startup if one is missing, rather than falling back to a hidden default
+- Config via `pydantic-settings`, read from `backend/.env` (`DATABASE_URL`, `GEMINI_API_KEY`, `SECRET_KEY`). All three are required — the backend fails at startup if one is missing, rather than falling back to a hidden default. Two optional settings have defaults for local development: `CORS_ORIGINS` (comma-separated frontend addresses) and `COOKIE_SECURE` (default `false`)
 - Seed script (`app/seed.py`) that loads the books from `backend/data/books.json` (6 books with short placeholder texts, `source: "placeholder"`). It matches books by title: new titles are inserted, existing ones are updated from the file, so the JSON file is the source of truth and the script is safe to run again
 - Original Kyrgyz-aware tokenizer (word/sentence segmentation handling Cyrillic script plus the Kyrgyz-specific letters ң, ө, ү)
 - Original vowel-based syllable counter for Kyrgyz words
@@ -60,7 +62,7 @@ The frontend calls the backend directly at `http://localhost:8000`; the backend'
 - Returns word, sentence, character, and syllable counts alongside both readability scores
 - A `find_difficult_words` function that ranks a text's unique words by syllable count, then length, and returns the top 5 (used by the assistant)
 - A small in-memory rate limiter (sliding window per user) in front of the model call
-- pytest tests for the tokenizer (including a regression test for a bug where words containing `ң` were split in two), `find_difficult_words`, password hashing and tokens, the rate limiter, and the register, login, `/auth/me`, `/assistant`, `/books` and `/books/{id}` endpoints (48 tests). The endpoint tests use an in-memory SQLite database and a fake model, so they need neither PostgreSQL nor the Gemini API
+- pytest tests for the tokenizer (including a regression test for a bug where words containing `ң` were split in two), `find_difficult_words`, password hashing and tokens, the rate limiter, the `CORS_ORIGINS` setting, the Origin check, and the register, login, logout, `/auth/me`, `/assistant`, `/books` and `/books/{id}` endpoints (60 tests). The endpoint tests use an in-memory SQLite database and a fake model, so they need neither PostgreSQL nor the Gemini API
 
 ### Frontend
 - React 19 + Vite 8 + Tailwind CSS v4, with React Router for client-side routing
@@ -70,8 +72,8 @@ The frontend calls the backend directly at `http://localhost:8000`; the backend'
 - Book page (`/books/:id`): each book card links to it. It fetches the book from `GET /books/{id}` and shows the title, age group and text, with loading and error ("Book not found.") states, "Text coming soon." for a book without text, and a link back to the library. An **"Ask AI about this book"** button opens `/assistant` with the book's text already filled in (passed through React Router navigation state)
 - Analyze page (`/analyze`): submits text to the backend's `POST /analyze` and displays word/sentence/syllable counts alongside ARI and Kyrgyz readability scores
 - Assistant page (`/assistant`): a form with the text, a question, and an answer language (English / Russian / Kyrgyz); shows the answer, a badge for each tool the model used, and an error alert when something fails. Logged-out visitors see a login card instead of the form; an expired login signs the user out, and the hourly limit shows a clear message
-- Login and register pages. The login state lives in a React context that restores a saved login on reload; the header shows "Log in" and "Sign up", or the user's email and "Log out"
-- Small API layer in `src/api/` (`books.js`, `analyze.js`, `assistant.js`, `auth.js`) so components don't call `fetch` directly
+- Login and register pages. The login state lives in a React context; the page never sees the token (it is in an httpOnly cookie), so on load the context asks `GET /auth/me` who is logged in, and "Log out" calls `POST /auth/logout`. The header shows "Log in" and "Sign up", or the user's email and "Log out"
+- Small API layer in `src/api/` (`books.js`, `analyze.js`, `assistant.js`, `auth.js`) so components don't call `fetch` directly. The API address comes from `VITE_API_URL` (read in `src/api/config.js`, default `http://localhost:8000`), and every call that needs the login sends `credentials: 'include'`
 - Book cards fall back to showing the title when a cover image fails to load
 - Book cover images are still static files in `frontend/public/books/`; the database stores their paths
 
@@ -91,7 +93,7 @@ Instead of letting the model judge the text on its own, the backend gives it two
 The model can call one tool, both, or neither (for an off-topic question it is instructed to decline briefly). The backend runs a tool-calling loop with a cap on the number of rounds, then returns the final answer together with the list of tools that were called — the frontend shows those as badges, so it's visible which analyzer tools the model consulted.
 
 ```
-Browser  ──POST /assistant {text, question, language} + login token──►  FastAPI
+Browser  ──POST /assistant {text, question, language} + login cookie─►  FastAPI
                                                             │  checks the login, then the hourly limit
                                                             ▼
                                               Gemini (Interactions API)
@@ -114,12 +116,14 @@ The system prompt tells the model that the scores come from formulas not yet val
 
 ## Authentication
 
-Users register with an email and a password and log in to get an access token. The assistant endpoint requires one.
+Users register with an email and a password and log in; the backend then keeps them logged in with an access token in an httpOnly cookie. The assistant endpoint requires a login.
 
 - **Passwords** are hashed with bcrypt (through `pwdlib`) and never stored or returned in plain text. They are Unicode-normalized (NFKC) before hashing, so the same Kyrgyz or Russian password typed on two devices gives the same result. bcrypt reads only the first 72 bytes and a Cyrillic letter takes 2 bytes, so passwords over 72 bytes (about 36 Cyrillic letters) are rejected with a clear message instead of being silently cut off. The minimum is 8 characters.
 - **Emails** are trimmed and lowercased, so `Dati@x.com` and `dati@x.com` are one account.
-- **Login** uses the standard OAuth2 password form (the email goes in the `username` field) and returns a signed JWT (HS256) that carries the user's id and expires after 24 hours. A wrong email and a wrong password get the same `401` message, and an unknown email still runs a dummy password check, so response time doesn't reveal which emails have accounts.
-- **Protected endpoints** use a `get_current_user` dependency: it verifies the token's signature and expiry (a token without an expiry is refused), then loads the user from the database on every request. The role is read from the database, not from the token.
+- **Login** uses the standard OAuth2 password form (the email goes in the `username` field). On success it creates a signed JWT (HS256) that carries the user's id and expires after 24 hours, puts it in a cookie named `access_token`, and returns the user (id, email, role) — the token itself is never in the response body. A wrong email and a wrong password get the same `401` message, and an unknown email still runs a dummy password check, so response time doesn't reveal which emails have accounts.
+- **The cookie** is `HttpOnly` (page scripts can't read it, so an injected script can't steal the token), `SameSite=Lax`, `Path=/`, `Max-Age` 24 hours, and `Secure` when the `COOKIE_SECURE` setting is `true` (it should be in production, where the site runs on https). `POST /auth/logout` clears it.
+- **Protected endpoints** use a `get_current_user` dependency: it reads the token from the cookie, verifies its signature and expiry (a token without an expiry is refused), then loads the user from the database on every request. The role is read from the database, not from the token. An `Authorization: Bearer` header is not accepted, so the "Authorize" button in `/docs` no longer logs you in.
+- **Cross-site request forgery (CSRF):** a cookie is sent automatically by the browser, so two defenses stop another website from acting as a logged-in user. `SameSite=Lax` keeps the browser from sending the cookie on cross-site `POST` requests, and an Origin check refuses any `POST`/`PUT`/`PATCH`/`DELETE` whose `Origin` header is not in `CORS_ORIGINS` (`403` `"Origin not allowed"`). Requests without an `Origin` header (curl, scripts, tests) pass, since the risk comes from browsers.
 - **Rate limit:** `/assistant` allows 10 questions per user per hour (`429` with a `Retry-After` header after that). Empty requests don't count.
 - **Roles:** every user has a `role` (`reader` by default). Nothing enforces `admin` yet.
 
@@ -142,11 +146,9 @@ This is a functioning proof of concept, not yet a production product. Deliberate
 Being explicit about what this does *not* do yet:
 - **The readability formulas are not validated for Kyrgyz.** ARI is language-agnostic, and the second score uses Ateşman's constants from Turkish. Both are first-pass approximations until they can be checked against age-labelled Kyrgyz texts.
 - **Assistant answers in Kyrgyz are uneven** with the small model used for development; English and Russian answers are more reliable.
-- **The login token is stored in the browser's `localStorage`**, where any script injected into the page could read it. Moving it to an httpOnly cookie is planned before public hosting.
 - **The rate limiter keeps its counts in memory**, so they reset when the backend restarts and are not shared between server processes.
-- **Tokens can't be revoked before they expire** (24 hours), and there is no password reset or email verification.
+- **Tokens can't be revoked before they expire** (24 hours): logging out clears the cookie in the browser, but the token itself stays valid until then. There is no password reset or email verification.
 - **The `role` column exists, but nothing uses it yet** (there is no admin panel).
-- **The API address (`http://localhost:8000`) is hardcoded** in the frontend.
 - The assistant's answer is shown as plain text, so Markdown formatting from the model appears as raw `**` markers.
 - If the backend can't be reached, the frontend shows the browser's generic "Failed to fetch" message rather than a friendly one.
 - **The book texts are short placeholders**, not real children's books yet.
@@ -191,6 +193,10 @@ Then edit `backend/.env`: replace `your_key_here` with your Gemini API key, and 
 
 `.env` is gitignored. The backend will not start without all three values.
 
+Two optional settings (commented out in `.env.example`) can stay unset for local development:
+- `CORS_ORIGINS` — comma-separated frontend addresses (default `http://localhost:5173,http://127.0.0.1:5173`). It is also the list the Origin check allows, so in production it must contain the frontend's address.
+- `COOKIE_SECURE` — default `false`; set it to `true` in production, so the login cookie is only sent over https.
+
 **3. Backend**
 ```bash
 cd backend
@@ -219,7 +225,9 @@ cd frontend
 npm install
 npm run dev
 ```
-App at `http://localhost:5173`. To use the AI assistant, create an account with "Sign up" in the header; the assistant requires a login.
+App at `http://localhost:5173`. Open it as `localhost`, not `127.0.0.1`: the API runs on `localhost:8000`, and the browser treats `127.0.0.1` and `localhost` as different sites, so with `127.0.0.1` the `SameSite=Lax` login cookie is not kept and you end up logged out. To use the AI assistant, create an account with "Sign up" in the header; the assistant requires a login.
+
+The API address is read at build time from `VITE_API_URL` (default `http://localhost:8000`; see `frontend/.env.example`). It doesn't need to be set for local development.
 
 **6. Before pushing**
 ```bash
@@ -278,21 +286,24 @@ Errors: `409` `{ "detail": "Email already registered" }`; `422` for an invalid e
 
 **`POST /auth/login`** — form-encoded (`application/x-www-form-urlencoded`); the email goes in the `username` field.
 ```json
-// Response
-{ "access_token": "...", "token_type": "bearer" }
+// Response — the token is not in the body; it is set in the access_token cookie
+// (Set-Cookie: access_token=…; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400, plus Secure when COOKIE_SECURE=true)
+{ "id": 1, "email": "reader@example.com", "role": "reader" }
 ```
 
-Error: `401` `{ "detail": "Incorrect email or password" }` (the same for a wrong password and an unknown email).
+Error: `401` `{ "detail": "Incorrect email or password" }` (the same for a wrong password and an unknown email); no cookie is set.
 
-**`GET /auth/me`** — requires `Authorization: Bearer <token>`.
+**`POST /auth/logout`** — clears the login cookie. Returns `204` with no body, also when nobody is logged in.
+
+**`GET /auth/me`** — requires the login cookie.
 ```json
 // Response
 { "id": 1, "email": "reader@example.com", "role": "reader" }
 ```
 
-Error: `401` when the token is missing, invalid or expired, or the user no longer exists.
+Error: `401` `{ "detail": "Could not validate credentials" }` when the cookie is missing, the token is invalid or expired, or the user no longer exists. An `Authorization: Bearer` header is ignored.
 
-**`POST /assistant`** — requires `Authorization: Bearer <token>`.
+**`POST /assistant`** — requires the login cookie.
 ```json
 // Request — language is one of "ky", "ru", "en" (defaults to "en")
 {
@@ -309,7 +320,7 @@ Error: `401` when the token is missing, invalid or expired, or the user no longe
 ```
 
 Errors:
-- `401` — missing, invalid or expired token
+- `401` — missing cookie, or an invalid or expired token
 - `422` — invalid input caught by FastAPI validation (missing or empty `text`/`question`, or a `language` other than `ky`/`ru`/`en`)
 - `400` — `{ "detail": "Text and question must not be empty" }` when `text` or `question` is whitespace only
 - `429` — more than 10 questions per user per hour; the `Retry-After` header gives the seconds to wait
@@ -338,6 +349,8 @@ Errors:
 
 **`GET /health`** → `{ "status": "health ok" }`
 
+Any `POST`/`PUT`/`PATCH`/`DELETE` sent with an `Origin` header that is not in `CORS_ORIGINS` gets `403` `{ "detail": "Origin not allowed" }`.
+
 ---
 
 ## Roadmap
@@ -364,8 +377,9 @@ Errors:
 
 **Phase 4 — Production readiness**
 - *(Done)* CI on GitHub Actions: backend tests, frontend lint and build, on every push to `main` and on pull requests
+- *(Done)* Login token in an httpOnly cookie (`SameSite=Lax`, plus an Origin check against CSRF), a logout endpoint, and configurable addresses (`VITE_API_URL` for the frontend, `CORS_ORIGINS` and `COOKIE_SECURE` for the backend)
 - More tests: `/analyze` and the frontend components
-- Before public hosting: move the login token from `localStorage` to an httpOnly cookie, make the API address configurable, move the rate-limit counter out of memory if more than one server process runs, use a hosted database, and add a privacy note and terms
+- Before public hosting: serve the frontend and the API as one site — the frontend host forwards `/api/...` to the backend, with `VITE_API_URL=/api`, `COOKIE_SECURE=true` and `CORS_ORIGINS` set to the frontend's address — because cookies sent between two different hosting domains are unreliable (Safari and Chrome restrict them); move the rate-limit counter out of memory if more than one server process runs; use a hosted database; and add a privacy note and terms
 - Containerize the backend and frontend (only the database runs in Docker today) and deploy
 - Automatic deployment (CD) from GitHub Actions
 
