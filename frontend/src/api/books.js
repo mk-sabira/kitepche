@@ -1,4 +1,8 @@
-const BOOKS_URL = 'http://localhost:8000/books'
+import { API_URL } from './config'
+
+
+const BOOKS_URL = `${API_URL}/books`
+
 
 export async function fetchBooks() {
     const response = await fetch(BOOKS_URL)

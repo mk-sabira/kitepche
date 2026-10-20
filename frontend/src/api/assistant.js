@@ -1,4 +1,8 @@
-const ASSISTANT_URL = 'http://localhost:8000/assistant'
+import { API_URL } from './config'
+
+
+const ASSISTANT_URL = `${API_URL}/assistant`
+
 
 export async function askAssistant({ text, question, language, token }) {
   const response = await fetch(ASSISTANT_URL, {

@@ -1,5 +1,8 @@
-// const ANALYZE_URL = '/api/analyze'
-const ANALYZE_URL = 'http://localhost:8000/analyze'
+import { API_URL } from './config'
+
+
+const ANALYZE_URL = `${API_URL}/analyze`
+
 
 export async function analyzeText(text) {
   const response = await fetch(ANALYZE_URL, {

@@ -1,4 +1,8 @@
-const AUTH_URL = 'http://localhost:8000/auth'
+import { API_URL } from './config'
+
+
+const AUTH_URL = `${API_URL}/auth`
+
 
 function errorMessage(data, fallback) {
   const detail = data?.detail
