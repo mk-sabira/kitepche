@@ -37,6 +37,7 @@ export async function loginUser(email, password) {
   // the backend's login takes a form, and the email goes in the "username" field
   const response = await fetch(`${AUTH_URL}/login`, {
     method: 'POST',
+    credentials: 'include',
     body: new URLSearchParams({ username: email, password }),
   })
   const data = await response.json().catch(() => null)
@@ -46,14 +47,26 @@ export async function loginUser(email, password) {
   return data
 }
 
-export async function fetchMe(token) {
+export async function fetchMe() {
   const response = await fetch(`${AUTH_URL}/me`, {
-    headers: { Authorization: `Bearer ${token}` },
+    credentials: 'include',
   })
   const data = await response.json().catch(() => null)
   if (!response.ok) {
     throw toError(response, data, 'Could not load your account.')
   }
   return data
+}
+
+
+
+export async function logoutUser() {
+  const response = await fetch(`${AUTH_URL}/logout`, {
+    method: 'POST',
+    credentials: 'include',
+  })
+  if (!response.ok) {
+    throw toError(response, null, 'Could not log out. Please try again.')
+  }
 }
 

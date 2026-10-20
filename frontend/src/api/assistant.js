@@ -4,13 +4,11 @@ import { API_URL } from './config'
 const ASSISTANT_URL = `${API_URL}/assistant`
 
 
-export async function askAssistant({ text, question, language, token }) {
+export async function askAssistant({ text, question, language }) {
   const response = await fetch(ASSISTANT_URL, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text, question, language }),
   })
 

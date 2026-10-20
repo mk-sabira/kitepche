@@ -1,54 +1,31 @@
 import { useEffect, useState } from 'react'
-import { fetchMe, loginUser, registerUser } from '../api/auth'
+import { fetchMe, loginUser, logoutUser, registerUser } from '../api/auth'
 import { AuthContext } from './auth-context'
 
-const TOKEN_KEY = 'kitepche_token'
-
-function readToken() {
+// older versions kept the login token in localStorage; remove it if it is still there
+function removeOldToken() {
   try {
-    return localStorage.getItem(TOKEN_KEY)
+    localStorage.removeItem('kitepche_token')
   } catch {
-    return null
-  }
-}
-
-function saveToken(token) {
-  try {
-    localStorage.setItem(TOKEN_KEY, token)
-  } catch {
-    // storage unavailable: the user stays logged in until the page is closed
-  }
-}
-
-function clearToken() {
-  try {
-    localStorage.removeItem(TOKEN_KEY)
-  } catch {
-    // nothing to clear
+    // storage unavailable: nothing to remove
   }
 }
 
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(readToken)
   const [user, setUser] = useState(null)
-  const [loading, setLoading] = useState(() => readToken() !== null)
+  const [loading, setLoading] = useState(true)
 
-  // on page load: if a token was saved, find out who it belongs to
+  // on page load: the browser sends the login cookie (if there is one); ask who it belongs to
   useEffect(() => {
-    const saved = readToken()
-    if (!saved) return
+    removeOldToken()
 
     let cancelled = false
-    fetchMe(saved)
+    fetchMe()
       .then((me) => {
         if (!cancelled) setUser(me)
       })
-      .catch((err) => {
-        if (cancelled) return
-        if (err.status === 401) {
-          clearToken()
-          setToken(null)
-        }
+      .catch(() => {
+        // 401 means not logged in; a network error also leaves the page logged out
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -60,10 +37,7 @@ export function AuthProvider({ children }) {
   }, [])
 
   async function login(email, password) {
-    const { access_token } = await loginUser(email, password)
-    const me = await fetchMe(access_token)
-    saveToken(access_token)
-    setToken(access_token)
+    const me = await loginUser(email, password)
     setUser(me)
     return me
   }
@@ -73,15 +47,19 @@ export function AuthProvider({ children }) {
     return login(email, password)
   }
 
-  function logout() {
-    clearToken()
-    setToken(null)
+  async function logout() {
+    try {
+      await logoutUser()
+    } catch {
+      // the server could not be reached: the cookie stays until it expires
+    }
     setUser(null)
   }
 
   return (
-    <AuthContext.Provider value={{ token, user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   )
 }
+

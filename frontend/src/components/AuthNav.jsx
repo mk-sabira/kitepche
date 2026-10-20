@@ -6,7 +6,7 @@ function AuthNav() {
   const { user, loading, logout } = useAuth()
   const navigate = useNavigate()
 
-  // a saved token is still being checked: show nothing, so there is no flash of "Log in"
+// the login check is still running: show nothing, so there is no flash of "Log in"
   if (loading) {
     return null
   }

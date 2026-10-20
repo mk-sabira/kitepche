@@ -18,7 +18,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 
 function AssistantPage() {
-  const { token, user, loading: authLoading, logout } = useAuth()
+  const { user, loading: authLoading, logout } = useAuth()
   const location = useLocation()
   const [text, setText] = useState(location.state?.text ?? '')
   const [question, setQuestion] = useState('')
@@ -48,7 +48,6 @@ function AssistantPage() {
         text: trimmedText,
         question: trimmedQuestion,
         language,
-        token,
       })
       setResult(data)
     } catch (err) {
