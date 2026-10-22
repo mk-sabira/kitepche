@@ -260,6 +260,15 @@ ESLint (`frontend/eslint.config.js`) relaxes two rules for the shadcn-generated 
 
 ## Deployment
 
+## Development workflow
+
+- `main` is what is live. Every merge into `main` deploys automatically: the frontend to Vercel, the backend to Render (which also runs `alembic upgrade head` when the container starts).
+- Work happens on short branches (`feature/...`, `fix/...`, `docs/...`), never directly on `main`.
+- Every branch goes through a pull request. CI (backend tests, frontend lint and build) must pass before it can be merged.
+- Database changes are Alembic migrations, written so the previous version of the code keeps working during a deploy (add columns first, remove old ones in a later change).
+- New or changed books in `backend/data/books.json` reach production only after `python -m app.seed` is run against the production database.
+
+
 Live at [kitepche.vercel.app](https://kitepche.vercel.app/). Everything runs on free tiers.
 
 ```
