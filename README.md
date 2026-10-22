@@ -2,11 +2,13 @@
 
 [![CI](https://github.com/mk-sabira/kitepche/actions/workflows/ci.yml/badge.svg)](https://github.com/mk-sabira/kitepche/actions/workflows/ci.yml)
 
+**Live demo:** [kitepche.vercel.app](https://kitepche.vercel.app/) — runs on free hosting, so the backend sleeps when nobody uses it: the first page load after a quiet period can take about a minute (the book list and login wait for the backend to wake up). After that it responds normally.
+
 **Kitepche** is a reading platform for Kyrgyz-language children's books, built around an original NLP component: a readability analyzer that scores how difficult a Kyrgyz text is to read, so books can eventually be matched to a child's reading level automatically.
 
 Kyrgyz is a low-resource language with very little existing NLP tooling. This project's core technical contribution is building that tooling — text analysis and readability scoring — from scratch, then wrapping it in a real product. On top of the analyzer sits an **AI reading assistant**: an LLM that answers questions about a text by calling the analyzer as a tool, so its answer rests on measured numbers, not on the model's impression alone.
 
-**Status:** MVP (minimum viable product) in active development. Working end-to-end: the readability engine and Analyze page, a database-backed book library with a reading page for each book, user accounts (register, log in and log out, with the login kept in an httpOnly cookie), and the AI reading assistant (`/assistant`), which requires a login and can be opened from a book with its text filled in. The book texts are short placeholders for now. Reading history, user profiles, and an admin panel are the next phase (see Roadmap). This is a local development project — it is not deployed.
+**Status:** MVP (minimum viable product) in active development. Working end-to-end: the readability engine and Analyze page, a database-backed book library with a reading page for each book, user accounts (register, log in and log out, with the login kept in an httpOnly cookie), and the AI reading assistant (`/assistant`), which requires a login and can be opened from a book with its text filled in. The book texts are short placeholders for now. The app is deployed on free tiers (see [Deployment](#deployment)). Reading history, user profiles, and an admin panel are the next phase (see Roadmap).
 
 Repository: [github.com/mk-sabira/kitepche](https://github.com/mk-sabira/kitepche)
 
@@ -18,7 +20,9 @@ The project is split into two services plus a database:
 
 1. **Backend (`/backend`)** — a FastAPI service exposing the Kyrgyz text readability analyzer, the book catalog, user accounts (register, log in), and the AI reading assistant as an API. Data is stored in PostgreSQL via SQLAlchemy. The assistant calls Google's Gemini API.
 2. **Frontend (`/frontend`)** — a React web app for browsing the book library, analyzing Kyrgyz text readability, creating an account and logging in, and asking the AI assistant about a text (logged-in users only).
-3. **Database** — PostgreSQL 16, run locally with Docker Compose (`docker-compose.yml` at the repo root).
+3. **Database** — PostgreSQL 16, run locally with Docker Compose (`docker-compose.yml` at the repo root); in production, a hosted PostgreSQL database (Neon).
+
+Local development setup:
 
 ```
 Browser (React, :5173)
@@ -32,6 +36,8 @@ PostgreSQL 16 (Docker, localhost:5433)
 ```
 
 The frontend calls the backend directly at the address in `VITE_API_URL` (default `http://localhost:8000`). The backend's CORS middleware allows the origins listed in `CORS_ORIGINS` (default: the Vite dev server, `http://localhost:5173` and `http://127.0.0.1:5173`) and allows credentials, so the browser can send the login cookie.
+
+In production the browser never calls the backend directly: it talks only to the frontend's address, which forwards `/api/...` to the backend (see [Deployment](#deployment)).
 
 ---
 
@@ -136,7 +142,7 @@ This is a functioning proof of concept, not yet a production product. Deliberate
 - User profiles and reading history
 - An admin panel (books are added by editing `backend/data/books.json` and re-running the seed)
 - Password reset and email verification
-- Deployment — there is no hosting and no automatic deployment (CD) yet. CI does exist (see [Continuous integration](#continuous-integration)), but there are no frontend tests yet
+- Production-grade hosting — the demo runs on free tiers with their limits (see [Deployment](#deployment) and [Limitations](#limitations)). CI exists (see [Continuous integration](#continuous-integration)), but there are no frontend tests yet
 - ML-based scoring (current scoring is formula-based; see Roadmap)
 
 ---
@@ -153,7 +159,8 @@ Being explicit about what this does *not* do yet:
 - If the backend can't be reached, the frontend shows the browser's generic "Failed to fetch" message rather than a friendly one.
 - **The book texts are short placeholders**, not real children's books yet.
 - **The assistant prefill is lost across login:** if a logged-out visitor clicks "Ask AI about this book" and then logs in, the text is not carried over and has to be pasted again.
-- No deployment yet (see Roadmap).
+- **Free hosting limits:** the backend sleeps after about 15 minutes without traffic, so the first request after that can take about a minute; the frontend does not yet explain the wait. The in-memory rate-limit counts reset whenever the backend restarts or wakes up. The Gemini free quota is shared by all users, so the assistant can be unavailable when it runs out. The free database has limited backups; the book data itself is safe in `backend/data/books.json` in git, but user accounts are not backed up.
+- There is no privacy note or terms page yet, although the app stores email addresses.
 - There are no frontend tests yet, and no tests for `/analyze`.
 
 ---
@@ -168,6 +175,7 @@ Being explicit about what this does *not* do yet:
 | Frontend | React 19, React Router 7, Vite 8, Tailwind CSS v4, shadcn/ui, ESLint |
 | Testing  | pytest (FastAPI TestClient; in-memory SQLite for the auth, books and assistant tests) |
 | CI       | GitHub Actions |
+| Hosting  | Vercel (frontend), Render (backend, Docker), Neon (PostgreSQL) — all free tiers |
 
 ---
 
@@ -247,6 +255,48 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main` and on 
 - **frontend** — Node 22: `npm ci`, `npm run lint`, `npm run build`.
 
 ESLint (`frontend/eslint.config.js`) relaxes two rules for the shadcn-generated files in `src/components/ui/` only: `no-unused-vars` ignores a variable named `React`, and `react-refresh/only-export-components` is off. The project's own code keeps all rules.
+
+---
+
+## Deployment
+
+Live at [kitepche.vercel.app](https://kitepche.vercel.app/). Everything runs on free tiers.
+
+```
+Browser ──► kitepche.vercel.app (Vercel)
+              ├── /api/*   ──► forwarded to the backend on Render (FastAPI in Docker)
+              │                                   │
+              │                                   ▼
+              │                         PostgreSQL on Neon
+              └── anything else ──► the React app (index.html)
+```
+
+- **Frontend — Vercel.** Builds the React app from `frontend/`. `frontend/vercel.json` forwards `/api/*` to the backend (stripping the `/api` prefix) and sends every other path to `index.html`, so React Router handles routes like `/books/3`. The browser only ever talks to the Vercel address, so the login cookie is first-party (no cross-site cookie problems).
+- **Backend — Render**, as a Docker web service built from `backend/Dockerfile` (Python 3.13 slim, runs as a non-root user). On every start the container runs `alembic upgrade head`, then starts `uvicorn` on the port Render provides (`$PORT`, default `8000`). `tests/`, `scripts/` and `.env` are kept out of the image (`backend/.dockerignore`).
+- **Database — Neon** (hosted PostgreSQL).
+
+**Environment variables** (values are set in each host's dashboard and are never committed):
+
+| Where | Variable | Notes |
+|-------|----------|-------|
+| Vercel | `VITE_API_URL` | `/api` — read at build time |
+| Render | `DATABASE_URL` | the Neon connection string |
+| Render | `SECRET_KEY` | long random value (`openssl rand -hex 32`) |
+| Render | `GEMINI_API_KEY` | Gemini API key |
+| Render | `COOKIE_SECURE` | `true` |
+| Render | `CORS_ORIGINS` | the exact frontend address, `https://kitepche.vercel.app` (no trailing slash); it is also the Origin-check list, so a mismatch makes every `POST` fail with `403` |
+
+**Setting up a new database.** The tables are created automatically: the backend runs `alembic upgrade head` on every start. The books are loaded once from a developer machine, by running the seed against the new database. From `backend/` with the venv active (the local `.env` still supplies the other settings; a variable set in the shell takes priority over `.env`):
+```bash
+printf 'Database URL: '; read -rs DATABASE_URL; echo   # paste it; it is not shown or saved in shell history
+export DATABASE_URL
+alembic upgrade head      # only needed if the backend has not started against this database yet
+python -m app.seed        # safe to run again: updates existing titles
+unset DATABASE_URL
+```
+Re-run the seed the same way after editing `backend/data/books.json`.
+
+**Redeploying.** Pushing to `main` is meant to redeploy both services through the Vercel and Render GitHub integrations (configured in their dashboards, not in this repository). Both dashboards can also redeploy by hand. A schema change deploys with the code, since migrations run when the container starts. Changing `VITE_API_URL` needs a new Vercel build, because it is read at build time.
 
 ---
 
@@ -379,8 +429,9 @@ Any `POST`/`PUT`/`PATCH`/`DELETE` sent with an `Origin` header that is not in `C
 - *(Done)* CI on GitHub Actions: backend tests, frontend lint and build, on every push to `main` and on pull requests
 - *(Done)* Login token in an httpOnly cookie (`SameSite=Lax`, plus an Origin check against CSRF), a logout endpoint, and configurable addresses (`VITE_API_URL` for the frontend, `CORS_ORIGINS` and `COOKIE_SECURE` for the backend)
 - More tests: `/analyze` and the frontend components
-- Before public hosting: serve the frontend and the API as one site — the frontend host forwards `/api/...` to the backend, with `VITE_API_URL=/api`, `COOKIE_SECURE=true` and `CORS_ORIGINS` set to the frontend's address — because cookies sent between two different hosting domains are unreliable (Safari and Chrome restrict them); move the rate-limit counter out of memory if more than one server process runs; use a hosted database; and add a privacy note and terms
-- Containerize the backend and frontend (only the database runs in Docker today) and deploy
-- Automatic deployment (CD) from GitHub Actions
+- *(Done)* First deployment: backend in Docker on Render, frontend on Vercel, PostgreSQL on Neon, served as one site (Vercel forwards `/api/...` to the backend, so the login cookie stays first-party), with `COOKIE_SECURE=true` and `CORS_ORIGINS` set to the frontend's address; migrations run on container start (see [Deployment](#deployment))
+- A friendly "the server is waking up" message for the slow first load, and possibly a keep-alive so the free backend sleeps less
+- A privacy note and terms (the app stores email addresses)
+- Move the rate-limit counter out of memory if more than one server process runs
 
 ---
