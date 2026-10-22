@@ -8,12 +8,19 @@ function BookLibrary() {
   const [books, setBooks] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-
+  const [slow, setSlow] = useState(false)
   useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), 4000)
+
     fetchBooks()
       .then((data) => setBooks(data))
       .catch((err) => setError(err.message))
-      .finally(() => setLoading(false))
+      .finally(() => {
+        clearTimeout(timer)
+        setLoading(false)
+      })
+
+    return () => clearTimeout(timer)
   }, [])
 
   const filteredBooks = useMemo(() => {
@@ -51,10 +58,13 @@ function BookLibrary() {
             </select>
           </div>
         </div>
-
-        {loading && <p className="font-body text-center text-ink/60 py-12">Loading books…</p>}
-        {error && <p className="font-body text-center text-red-700 py-12">{error}</p>}
-
+        {loading && (
+          <p className="font-body text-center text-ink/60 py-12">
+            {slow
+              ? 'Waking up the server… the first visit after a quiet period can take up to a minute.'
+              : 'Loading books…'}
+          </p>
+        )}
         {!loading && !error && (
           filteredBooks.length > 0 ? (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">

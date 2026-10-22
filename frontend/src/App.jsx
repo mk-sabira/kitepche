@@ -6,9 +6,14 @@ import BookPage from './pages/BookPage'
 import HomePage from './pages/HomePage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/Register'
+import { useEffect } from 'react'
+import { warmUpServer } from './api/warmup'
 
 
 function App() {
+    useEffect(() => {
+    warmUpServer()
+  }, [])
   return (
     <div className="min-h-screen bg-paper-soft">
       <Header />
