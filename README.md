@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/mk-sabira/kitepche/actions/workflows/ci.yml/badge.svg)](https://github.com/mk-sabira/kitepche/actions/workflows/ci.yml)
 
-**Live demo:** [kitepche.vercel.app](https://kitepche.vercel.app/) — runs on free hosting, so the backend sleeps when nobody uses it: the first page load after a quiet period can take about a minute (the book list and login wait for the backend to wake up). After that it responds normally.
+**Live demo:** [kitepche.vercel.app](https://kitepche.vercel.app/) — runs on free hosting, so the backend sleeps when nobody uses it: the first page load after a quiet period can take up to a minute (about 20 seconds in my test). The page shows a "waking up" message while the book list waits for the backend. After that it responds normally.
 
 **Kitepche** is a reading platform for Kyrgyz-language children's books, built around an original NLP component: a readability analyzer that scores how difficult a Kyrgyz text is to read, so books can eventually be matched to a child's reading level automatically.
 
@@ -159,7 +159,7 @@ Being explicit about what this does *not* do yet:
 - If the backend can't be reached, the frontend shows the browser's generic "Failed to fetch" message rather than a friendly one.
 - **The book texts are short placeholders**, not real children's books yet.
 - **The assistant prefill is lost across login:** if a logged-out visitor clicks "Ask AI about this book" and then logs in, the text is not carried over and has to be pasted again.
-- **Free hosting limits:** the backend sleeps after about 15 minutes without traffic, so the first request after that can take about a minute; the frontend does not yet explain the wait. The in-memory rate-limit counts reset whenever the backend restarts or wakes up. The Gemini free quota is shared by all users, so the assistant can be unavailable when it runs out. The free database has limited backups; the book data itself is safe in `backend/data/books.json` in git, but user accounts are not backed up.
+- **Free hosting limits:** the backend sleeps after about 15 minutes without traffic, so the first request after that can take up to a minute (about 20 seconds in my one real test). The app pings the backend as soon as it loads, and the book list retries and shows a "waking up" message; login, registration and the assistant do not retry automatically. The in-memory rate-limit counts reset whenever the backend restarts or wakes up. The Gemini free quota is shared by all users, so the assistant can be unavailable when it runs out. The free database has limited backups; the book data itself is safe in `backend/data/books.json` in git, but user accounts are not backed up.
 - There is no privacy note or terms page yet, although the app stores email addresses.
 - There are no frontend tests yet, and no tests for `/analyze`.
 
@@ -237,7 +237,7 @@ App at `http://localhost:5173`. Open it as `localhost`, not `127.0.0.1`: the API
 
 The API address is read at build time from `VITE_API_URL` (default `http://localhost:8000`; see `frontend/.env.example`). It doesn't need to be set for local development.
 
-**6. Before pushing**
+**6. Before opening a pull request**
 ```bash
 cd frontend
 npm run lint
@@ -254,20 +254,13 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main` and on 
 - **backend** — Python 3.13: `pip install -r requirements.txt`, then `python -m pytest tests`. `DATABASE_URL`, `GEMINI_API_KEY` and `SECRET_KEY` are set to dummy values so the config loads; no real secrets are used. The tests don't touch PostgreSQL or the Gemini API (the auth and assistant tests use an in-memory SQLite database and a fake model).
 - **frontend** — Node 22: `npm ci`, `npm run lint`, `npm run build`.
 
+Both jobs are required checks on `main` (a GitHub ruleset): a change can only be merged through a pull request whose `backend` and `frontend` jobs pass.
+
 ESLint (`frontend/eslint.config.js`) relaxes two rules for the shadcn-generated files in `src/components/ui/` only: `no-unused-vars` ignores a variable named `React`, and `react-refresh/only-export-components` is off. The project's own code keeps all rules.
 
 ---
 
 ## Deployment
-
-## Development workflow
-
-- `main` is what is live. Every merge into `main` deploys automatically: the frontend to Vercel, the backend to Render (which also runs `alembic upgrade head` when the container starts).
-- Work happens on short branches (`feature/...`, `fix/...`, `docs/...`), never directly on `main`.
-- Every branch goes through a pull request. CI (backend tests, frontend lint and build) must pass before it can be merged.
-- Database changes are Alembic migrations, written so the previous version of the code keeps working during a deploy (add columns first, remove old ones in a later change).
-- New or changed books in `backend/data/books.json` reach production only after `python -m app.seed` is run against the production database.
-
 
 Live at [kitepche.vercel.app](https://kitepche.vercel.app/). Everything runs on free tiers.
 
@@ -305,7 +298,15 @@ unset DATABASE_URL
 ```
 Re-run the seed the same way after editing `backend/data/books.json`.
 
-**Redeploying.** Pushing to `main` is meant to redeploy both services through the Vercel and Render GitHub integrations (configured in their dashboards, not in this repository). Both dashboards can also redeploy by hand. A schema change deploys with the code, since migrations run when the container starts. Changing `VITE_API_URL` needs a new Vercel build, because it is read at build time.
+**Redeploying.** Merging a pull request into `main` redeploys both services through the Vercel and Render GitHub integrations (set up in their dashboards, not in this repository; Render's Auto-Deploy is "On Commit" for `main`). Render's Root Directory is `backend/`, so it rebuilds only when files under `backend/` change. `main` is protected: a change needs a pull request whose `backend` and `frontend` checks pass, so a red build is not merged and deployed. Both dashboards can also redeploy by hand. A schema change deploys with the code, since migrations run when the container starts. Changing `VITE_API_URL` needs a new Vercel build, because it is read at build time.
+
+## Development workflow
+
+- `main` is what is live. Every merge into `main` deploys automatically: the frontend to Vercel, the backend to Render (which also runs `alembic upgrade head` when the container starts).
+- Work happens on short branches (`feature/...`, `fix/...`, `docs/...`), never directly on `main`.
+- Every branch goes through a pull request. CI (backend tests, frontend lint and build) must pass before it can be merged; a GitHub ruleset on `main` enforces both the pull request and the passing `backend` and `frontend` checks.
+- Database changes are Alembic migrations, written so the previous version of the code keeps working during a deploy (add columns first, remove old ones in a later change).
+- New or changed books in `backend/data/books.json` reach production only after `python -m app.seed` is run against the production database.
 
 ---
 
@@ -439,8 +440,6 @@ Any `POST`/`PUT`/`PATCH`/`DELETE` sent with an `Origin` header that is not in `C
 - *(Done)* Login token in an httpOnly cookie (`SameSite=Lax`, plus an Origin check against CSRF), a logout endpoint, and configurable addresses (`VITE_API_URL` for the frontend, `CORS_ORIGINS` and `COOKIE_SECURE` for the backend)
 - More tests: `/analyze` and the frontend components
 - *(Done)* First deployment: backend in Docker on Render, frontend on Vercel, PostgreSQL on Neon, served as one site (Vercel forwards `/api/...` to the backend, so the login cookie stays first-party), with `COOKIE_SECURE=true` and `CORS_ORIGINS` set to the frontend's address; migrations run on container start (see [Deployment](#deployment))
-- A friendly "the server is waking up" message for the slow first load, and possibly a keep-alive so the free backend sleeps less
+- *(Done)* Cold-start handling: the app pings `/health` on load, retries the book requests and shows a "waking up" message on the library. Still open: the same for login and the assistant. A keep-alive ping was considered and skipped for now (the one real cold start took about 20 seconds)
 - A privacy note and terms (the app stores email addresses)
 - Move the rate-limit counter out of memory if more than one server process runs
-
----
